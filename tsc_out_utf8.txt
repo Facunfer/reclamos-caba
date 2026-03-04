@@ -1,0 +1,1 @@
+﻿scripts/seed-users.ts(70,65): error TS2339: Property 'email' does not exist on type 'never'.

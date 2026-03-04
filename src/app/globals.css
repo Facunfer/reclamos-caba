@@ -1,0 +1,77 @@
+@import "leaflet/dist/leaflet.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #000000;
+    --foreground: #ffffff;
+    --card: #0a0a0a;
+    --card-border: #222222;
+    --primary: #7c3aed;
+    /* Purple */
+    --primary-hover: #6d28d9;
+    --accent: #f59e0b;
+    /* Yellow/Amber for some accents if needed */
+    --muted: #a1a1aa;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Leaflet icon fix for Next.js */
+.leaflet-default-icon-path {
+  background-image: url(https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png);
+}
+
+/* Custom styles for the LLA look */
+.lla-card {
+  background-color: var(--card);
+  border: 1px solid var(--card-border);
+  @apply rounded-xl shadow-2xl;
+}
+
+.lla-btn-primary {
+  background-color: var(--primary);
+  @apply text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 transform hover:scale-[1.02];
+}
+
+.lla-btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+.lla-input {
+  background-color: #000;
+  border: 1px solid var(--card-border);
+  color: #fff;
+  @apply rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all;
+}
+
+/* Leaflet Popup Styles */
+.lla-popup .leaflet-popup-content-wrapper,
+.lla-popup .leaflet-popup-tip {
+  background: #000 !important;
+  color: #fff !important;
+  border: 1px solid #222;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+}
+
+.lla-popup-light .leaflet-popup-content-wrapper,
+.lla-popup-light .leaflet-popup-tip {
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #eee;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.lla-popup .leaflet-popup-content,
+.lla-popup-light .leaflet-popup-content {
+  margin: 0 !important;
+  padding: 12px !important;
+}
