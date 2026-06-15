@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "seed:users": "tsx scripts/seed-users.ts"
+    "seed:users": "tsx scripts/seed-users.ts",
+    "seed:circuitos": "tsx scripts/seed-circuitos.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
