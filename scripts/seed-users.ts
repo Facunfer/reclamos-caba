@@ -101,12 +101,16 @@ async function seed() {
 
         // 2. Crear/Actualizar perfil en public.perfiles
         if (userId) {
+            // Los usuarios sembrados son los "responsables" de cada comuna:
+            // deben poder crear sub-usuarios. Sin esto quedan en can_create_users=false
+            // (default de la columna) y el flujo /panel/usuarios queda inaccesible.
             const { error: profileError } = await supabase
                 .from("perfiles")
                 .upsert(
                     {
                         user_id: userId,
-                        comuna_id: comunaId
+                        comuna_id: comunaId,
+                        can_create_users: true
                     },
                     { onConflict: "user_id" }
                 );
