@@ -8,9 +8,11 @@ import type { User } from "@supabase/supabase-js";
 interface Props {
   user: User;
   comunaId: number | null;
+  canCreateUsers?: boolean;
+  isMaster?: boolean;
 }
 
-export default function PanelNav({ user, comunaId }: Props) {
+export default function PanelNav({ user, comunaId, canCreateUsers = false, isMaster = false }: Props) {
   const router = useRouter();
 
   async function handleLogout() {
@@ -37,6 +39,12 @@ export default function PanelNav({ user, comunaId }: Props) {
           <nav className="flex items-center gap-4 border-r border-white/10 pr-6 mr-2">
             <Link href="/panel" className="hover:text-white transition-colors">Ver Reclamos</Link>
             <Link href="/panel/sugerencias" className="text-indigo-200 hover:text-white transition-colors">Ver Sugerencias</Link>
+            <Link href="/panel/circuitos" className="text-indigo-200 hover:text-white transition-colors">Circuitos</Link>
+            {(canCreateUsers || isMaster) && (
+              <Link href="/panel/usuarios" className="text-yellow-400 hover:text-yellow-200 transition-colors">
+                {isMaster ? "Todos los Usuarios" : "Usuarios"}
+              </Link>
+            )}
           </nav>
 
           <Link href="/panel/nuevo" className="lla-btn-primary px-4 py-2 text-[10px]">
@@ -45,7 +53,6 @@ export default function PanelNav({ user, comunaId }: Props) {
           <Link href="/panel/sugerencias/nuevo" className="text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-colors px-4 py-2 rounded-lg text-[10px]">
             + Nueva Sugerencia
           </Link>
-          <Link href="/public" className="text-muted hover:text-white transition-colors ml-4">Vista pública</Link>
           <button onClick={handleLogout} className="text-muted hover:text-red-400 transition-colors">
             Salir
           </button>

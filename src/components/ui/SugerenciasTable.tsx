@@ -27,6 +27,7 @@ export default function SugerenciasTable({ sugerencias }: { sugerencias: Sugeren
                         <th className="px-6 py-4">Importancia</th>
                         <th className="px-6 py-4">Dirección (Opcional)</th>
                         <th className="px-6 py-4">Geo</th>
+                        <th className="px-6 py-4">Archivos</th>
                         <th className="px-6 py-4">Contacto</th>
                     </tr>
                 </thead>
@@ -49,6 +50,24 @@ export default function SugerenciasTable({ sugerencias }: { sugerencias: Sugeren
                                 ) : (
                                     <span className="text-muted text-xs">-</span>
                                 )}
+                            </td>
+                            <td className="px-6 py-5">
+                                {s.reclamo_archivos && s.reclamo_archivos.length > 0 ? (
+                                    <div className="flex gap-1 flex-wrap">
+                                        {s.reclamo_archivos.map((file) => (
+                                            <a
+                                                key={file.id}
+                                                href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/reclamos-documentos/${file.storage_path}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="w-5 h-5 flex items-center justify-center bg-indigo-900/50 text-indigo-400 rounded hover:bg-indigo-700 hover:text-white transition-colors border border-indigo-700/50"
+                                                title="Ver archivo"
+                                            >
+                                                {file.tipo === 'foto' ? '🖼️' : file.tipo === 'pdf' ? '📕' : '📄'}
+                                            </a>
+                                        ))}
+                                    </div>
+                                ) : <span className="text-muted/30">-</span>}
                             </td>
                             <td className="px-6 py-5">
                                 <div className="text-[10px] uppercase font-bold tracking-tight">

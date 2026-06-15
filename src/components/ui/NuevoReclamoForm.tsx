@@ -28,6 +28,36 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
     direccion_raw: "",
   });
 
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selectedFiles = Array.from(e.target.files);
+      if (files.length + selectedFiles.length > 5) {
+        setError("Máximo 5 fotos permitidas.");
+        return;
+      }
+      
+      const newFiles = [...files, ...selectedFiles];
+      setFiles(newFiles);
+
+      const newPreviews = selectedFiles.map(file => URL.createObjectURL(file));
+      setPreviews([...previews, ...newPreviews]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    const newFiles = [...files];
+    newFiles.splice(index, 1);
+    setFiles(newFiles);
+
+    const newPreviews = [...previews];
+    URL.revokeObjectURL(newPreviews[index]);
+    newPreviews.splice(index, 1);
+    setPreviews(newPreviews);
+  };
+
   function set(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -137,7 +167,7 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
     }
 
     const supabase = createClient();
-    const { error: insertError } = await supabase.from("reclamos").insert({
+    const { data: reclamoData, error: insertError } = await supabase.from("reclamos").insert({
       tipo_reclamo: form.tipo_reclamo,
       urgencia: form.urgencia,
       descripcion: form.descripcion,
@@ -150,15 +180,45 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
       estado: "nuevo",
       comuna_id: comunaId,
       creado_por_user_id: userId,
-    });
+    }).select().single();
 
     if (insertError) {
       setError("Error al guardar el reclamo: " + insertError.message);
       setLoading(false);
-    } else {
-      router.push("/panel");
-      router.refresh();
+      return;
     }
+
+    // Upload files if any
+    if (files.length > 0) {
+      for (const file of files) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `${reclamoData.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('reclamos-fotos')
+          .upload(filePath, file);
+
+        if (!uploadError) {
+          await supabase.from('reclamo_archivos').insert({
+            reclamo_id: reclamoData.id,
+            tipo: 'foto',
+            storage_path: filePath
+          });
+        } else {
+          console.error("Error uploading file:", uploadError);
+          // If the first upload fails with "Bucket not found", we should inform the user clearly
+          if (uploadError.message.includes("Bucket not found")) {
+            setError("Error: El contenedor 'reclamos-fotos' no existe en Supabase. Por favor ejecute el script SQL proporcionado.");
+            setLoading(false);
+            return;
+          }
+        }
+      }
+    }
+
+    router.push("/panel");
+    router.refresh();
   }
 
   function handleDireccionChange(val: string) {
@@ -276,6 +336,37 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
             placeholder="11-1234-5678"
             className="lla-input w-full px-4 py-3 text-sm focus:outline-none"
           />
+        </div>
+      </div>
+
+      <div className="space-y-4 border-t border-card-border pt-8">
+        <label className="block text-xs font-bold text-muted uppercase tracking-widest ml-1">Fotos del Reclamo (Máximo 5)</label>
+        <div className="flex flex-wrap gap-4">
+          {previews.map((url, i) => (
+            <div key={i} className="relative w-24 h-24 border border-card-border rounded-lg overflow-hidden group">
+              <img src={url} alt="preview" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => removeFile(i)}
+                className="absolute inset-0 bg-red-600/80 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center font-bold text-xs"
+              >
+                Eliminar
+              </button>
+            </div>
+          ))}
+          {files.length < 5 && (
+            <label className="w-24 h-24 border-2 border-dashed border-card-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors text-muted hover:text-primary">
+              <span className="text-2xl">+</span>
+              <span className="text-[8px] font-bold uppercase">Subir</span>
+              <input
+                type="file"
+                className="hidden"
+                accept="image/*"
+                multiple
+                onChange={handleFileChange}
+              />
+            </label>
+          )}
         </div>
       </div>
 

@@ -27,6 +27,7 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
             <th className="px-6 py-4">Urgencia</th>
             <th className="px-6 py-4">Dirección</th>
             <th className="px-6 py-4">Geo</th>
+            <th className="px-6 py-4">Archivos</th>
             <th className="px-6 py-4">Contacto</th>
           </tr>
         </thead>
@@ -48,6 +49,26 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
                   <span className="text-primary text-base">●</span>
                 ) : (
                   <span className="text-red-900/50 text-xs">ERR</span>
+                )}
+              </td>
+              <td className="px-6 py-5">
+                {r.reclamo_archivos && r.reclamo_archivos.length > 0 ? (
+                  <div className="flex gap-1 flex-wrap">
+                    {r.reclamo_archivos.map((file, idx) => (
+                      <a
+                        key={file.id}
+                        href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/reclamos-fotos/${file.storage_path}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-5 h-5 flex items-center justify-center bg-indigo-900/50 text-indigo-400 rounded hover:bg-indigo-700 hover:text-white transition-colors border border-indigo-700/50"
+                        title="Ver archivo"
+                      >
+                         {file.tipo === 'foto' ? '🖼️' : '📄'}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-muted/30">-</span>
                 )}
               </td>
               <td className="px-6 py-5">

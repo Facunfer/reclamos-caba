@@ -40,11 +40,22 @@ export default async function PanelPage({
   if (params.desde) query = query.gte("created_at", params.desde);
   if (params.hasta) query = query.lte("created_at", params.hasta + "T23:59:59");
 
-  const { data: reclamos, count, error } = await query;
+  const { data: reclamosRaw, count, error } = await query;
 
   if (error) {
     return <div className="text-red-600 p-4">Error cargando reclamos: {error.message}</div>;
   }
+
+  // Fetch files separately to avoid relationship cache issues
+  const reclamosIds = (reclamosRaw as any[])?.map(r => r.id) || [];
+  const { data: archivos } = reclamosIds.length > 0
+    ? await supabase.from("reclamo_archivos").select("*").in("reclamo_id", reclamosIds)
+    : { data: [] };
+
+  const reclamos = (reclamosRaw as any[])?.map(r => ({
+    ...r,
+    reclamo_archivos: archivos?.filter(a => a.reclamo_id === r.id) || []
+  }));
 
   const totalPages = Math.ceil((count ?? 0) / PAGE_SIZE);
 

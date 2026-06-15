@@ -28,6 +28,40 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
         direccion_raw: "",
     });
 
+    const [files, setFiles] = useState<File[]>([]);
+    const [previews, setPreviews] = useState<{ url: string, type: string, name: string }[]>([]);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const selectedFiles = Array.from(e.target.files);
+            if (files.length + selectedFiles.length > 5) {
+                setError("Máximo 5 archivos permitidos.");
+                return;
+            }
+
+            const newFiles = [...files, ...selectedFiles];
+            setFiles(newFiles);
+
+            const newPreviews = selectedFiles.map(file => ({
+                url: file.type.startsWith('image/') ? URL.createObjectURL(file) : "",
+                type: file.type,
+                name: file.name
+            }));
+            setPreviews([...previews, ...newPreviews]);
+        }
+    };
+
+    const removeFile = (index: number) => {
+        const newFiles = [...files];
+        newFiles.splice(index, 1);
+        setFiles(newFiles);
+
+        const newPreviews = [...previews];
+        if (newPreviews[index].url) URL.revokeObjectURL(newPreviews[index].url);
+        newPreviews.splice(index, 1);
+        setPreviews(newPreviews);
+    };
+
     function set(key: string, value: string) {
         setForm((prev) => ({ ...prev, [key]: value }));
     }
@@ -131,7 +165,7 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
         }
 
         const supabase = createClient();
-        const { error: insertError } = await supabase.from("sugerencias").insert({
+        const { data: sugerenciaData, error: insertError } = await supabase.from("sugerencias").insert({
             tipo_sugerencia: form.tipo_sugerencia,
             urgencia: form.urgencia,
             descripcion: form.descripcion,
@@ -144,15 +178,48 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
             estado: "nuevo",
             comuna_id: comunaId,
             creado_por_user_id: userId,
-        });
+        }).select().single();
 
         if (insertError) {
             setError("Error al guardar la sugerencia: " + insertError.message);
             setLoading(false);
-        } else {
-            router.push("/panel");
-            router.refresh();
+            return;
         }
+
+        // Upload files if any
+        if (files.length > 0) {
+            for (const file of files) {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Math.random()}.${fileExt}`;
+                const filePath = `${sugerenciaData.id}/${fileName}`;
+                
+                let tipo: 'foto' | 'pdf' | 'documento' = 'documento';
+                if (file.type.startsWith('image/')) tipo = 'foto';
+                else if (file.type === 'application/pdf') tipo = 'pdf';
+
+                const { error: uploadError } = await supabase.storage
+                    .from('reclamos-documentos')
+                    .upload(filePath, file);
+
+                if (!uploadError) {
+                    await supabase.from('reclamo_archivos').insert({
+                        sugerencia_id: sugerenciaData.id,
+                        tipo: tipo,
+                        storage_path: filePath
+                    });
+                } else {
+                    console.error("Error uploading file:", uploadError);
+                    if (uploadError.message.includes("Bucket not found")) {
+                        setError("Error: El contenedor 'reclamos-documentos' no existe en Supabase. Por favor ejecute el script SQL proporcionado.");
+                        setLoading(false);
+                        return;
+                    }
+                }
+            }
+        }
+
+        router.push("/panel/sugerencias"); // Redirect to suggests list
+        router.refresh();
     }
 
     function handleDireccionChange(val: string) {
@@ -246,6 +313,44 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
                 {geoStatus !== "ok" && !showSuggestions && debouncedDireccion.length > 3 && (
                     <p className="text-[10px] text-primary mt-1 uppercase font-black tracking-[0.1em] animate-pulse">Por favor seleccione una dirección de la lista para validar.</p>
                 )}
+            </div>
+
+            <div className="space-y-4 border-t border-card-border pt-8">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest ml-1">Documentos o Fotos (Máximo 5)</label>
+                <div className="flex flex-wrap gap-4">
+                    {previews.map((preview, i) => (
+                        <div key={i} className="relative w-24 h-24 border border-card-border rounded-lg overflow-hidden group bg-black/40 flex flex-col items-center justify-center p-2">
+                            {preview.url ? (
+                                <img src={preview.url} alt="preview" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="text-center">
+                                    <div className="text-2xl">📄</div>
+                                    <div className="text-[8px] text-muted truncate w-20 px-1">{preview.name}</div>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => removeFile(i)}
+                                className="absolute inset-0 bg-red-600/80 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center font-bold text-xs"
+                            >
+                                Eliminar
+                            </button>
+                        </div>
+                    ))}
+                    {files.length < 5 && (
+                        <label className="w-24 h-24 border-2 border-dashed border-card-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors text-muted hover:text-primary">
+                            <span className="text-2xl">+</span>
+                            <span className="text-[8px] font-bold uppercase text-center px-1">Subir Foto/PDF/Doc</span>
+                            <input
+                                type="file"
+                                className="hidden"
+                                accept="image/*,.pdf,.doc,.docx"
+                                multiple
+                                onChange={handleFileChange}
+                            />
+                        </label>
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-card-border pt-8">

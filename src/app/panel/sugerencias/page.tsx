@@ -40,11 +40,22 @@ export default async function PanelSugerenciasPage({
     if (params.desde) query = query.gte("created_at", params.desde);
     if (params.hasta) query = query.lte("created_at", params.hasta + "T23:59:59");
 
-    const { data: sugerencias, count, error } = await query;
+    const { data: sugerenciasRaw, count, error } = await query;
 
     if (error) {
         return <div className="text-red-600 p-4">Error cargando sugerencias: {error.message}</div>;
     }
+
+    // Fetch files separately
+    const sugerenciasIds = (sugerenciasRaw as any[])?.map(s => s.id) || [];
+    const { data: archivos } = sugerenciasIds.length > 0
+        ? await supabase.from("reclamo_archivos").select("*").in("sugerencia_id", sugerenciasIds)
+        : { data: [] };
+
+    const sugerencias = (sugerenciasRaw as any[])?.map(s => ({
+        ...s,
+        reclamo_archivos: archivos?.filter(a => a.sugerencia_id === s.id) || []
+    }));
 
     const totalPages = Math.ceil((count ?? 0) / PAGE_SIZE);
 
