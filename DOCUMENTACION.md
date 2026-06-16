@@ -217,11 +217,11 @@ Tercera familia de entidades, para **problemas puntuales por circuito electoral*
 
 Datos importados del GeoJSON oficial de Datos Abiertos CABA (167 circuitos, los 15 comunas). Lectura pública; sin escritura por cliente (se pueblan por `scripts/seed-circuitos.ts` con Service Role).
 
-#### `tipos_problema_circuito`
-Catálogo (`id`, `nombre` UNIQUE, `activo`), sembrado con: Infraestructura, Seguridad, Servicios, Quejas vecinales, Logística electoral, Otros.
+#### Catálogo de tipos
+Los problemas de circuito usan el **mismo catálogo que los reclamos** (`public.tipos_reclamo`): `problemas_circuito.tipo` tiene FK a `tipos_reclamo(nombre)`, así el desplegable ofrece exactamente las mismas opciones (AGUA/CLOACAS, ALUMBRADO, ARBOLADO, BACHES, etc.). Definido en la migración `008`. *(La migración `006` había creado un catálogo propio `tipos_problema_circuito`, eliminado en `008`.)*
 
 #### `problemas_circuito`
-Espejo simplificado de `reclamos`: `id` UUID, `circuito_id` FK, `comuna_id` (denormalizado para RLS), `tipo`, `urgencia`, `descripcion`, `estado` (`nuevo/en_proceso/resuelto/descartado`), `lat`/`lng` opcionales, `creado_por_user_id`, timestamps. **RLS idéntica a `reclamos`** (acceso solo a la comuna del perfil). El master consume la vista saneada **`problemas_circuito_publicos`**.
+Espejo simplificado de `reclamos`: `id` UUID, `circuito_id` FK, `comuna_id` (denormalizado para RLS), `tipo` (FK a `tipos_reclamo`), `urgencia`, `descripcion`, `estado` (`nuevo/en_proceso/resuelto/descartado`), `lat`/`lng` opcionales, `creado_por_user_id`, timestamps. **RLS idéntica a `reclamos`** (acceso solo a la comuna del perfil). El master consume la vista saneada **`problemas_circuito_publicos`**.
 
 #### Funciones (RPC) en `006`
 - **`import_circuito(codigo, barrio, comuna_id, geojson)`** — convierte GeoJSON → `geometry(MultiPolygon,4326)` (`ST_GeomFromGeoJSON` + `ST_Multi`/`ST_SetSRID`) y upsertea por `codigo`. `SECURITY DEFINER`, **solo `service_role`** (la usa el seed). Necesaria porque PostgREST no inserta geometría desde GeoJSON directamente.

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
-import type { CircuitoFeatureProps, ProblemaCircuito, TipoProblemaCircuito, Urgencia } from "@/types";
+import type { CircuitoFeatureProps, ProblemaCircuito, TipoReclamo, Urgencia } from "@/types";
 
 const MapaCircuitos = dynamic(() => import("@/components/map/MapaCircuitos"), { ssr: false });
 
@@ -18,7 +18,7 @@ const URGENCIA_BADGE: Record<string, string> = {
 interface Props {
   comunaId: number;
   userId: string;
-  tipos: TipoProblemaCircuito[];
+  tipos: TipoReclamo[];
 }
 
 export default function CircuitosPanelClient({ comunaId, userId, tipos }: Props) {

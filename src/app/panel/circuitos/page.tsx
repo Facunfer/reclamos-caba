@@ -2,7 +2,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import CircuitosPanelClient from "@/components/CircuitosPanelClient";
-import type { TipoProblemaCircuito } from "@/types";
+import type { TipoReclamo } from "@/types";
 
 export default async function CircuitosPanelPage() {
   const supabase = await createClient();
@@ -11,7 +11,8 @@ export default async function CircuitosPanelPage() {
 
   const [{ data: perfil }, { data: tipos }] = await Promise.all([
     supabase.from("perfiles").select("comuna_id").eq("user_id", user.id).single(),
-    supabase.from("tipos_problema_circuito").select("id, nombre, activo").eq("activo", true).order("nombre"),
+    // Mismo catálogo que los reclamos, para que el desplegable ofrezca las mismas opciones.
+    supabase.from("tipos_reclamo").select("id, nombre").eq("activo", true).order("nombre"),
   ]);
 
   if (!perfil) {
@@ -30,7 +31,7 @@ export default async function CircuitosPanelPage() {
       <CircuitosPanelClient
         comunaId={perfil.comuna_id}
         userId={user.id}
-        tipos={(tipos as TipoProblemaCircuito[]) ?? []}
+        tipos={(tipos as TipoReclamo[]) ?? []}
       />
     </div>
   );
