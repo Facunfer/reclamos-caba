@@ -42,8 +42,11 @@ export default function Charts({ barras, linea, apiladoPorOrigen = true }: Props
         {barras.length === 0 ? (
           <div className="text-muted text-xs py-12 text-center uppercase font-bold">Sin datos para mostrar</div>
         ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={barras} margin={{ top: 10, right: 10, bottom: 70, left: -20 }}>
+          <ResponsiveContainer width="100%" height={apiladoPorOrigen ? 330 : 300}>
+            <BarChart
+              data={barras}
+              margin={{ top: apiladoPorOrigen ? 28 : 10, right: 10, bottom: 70, left: -20 }}
+            >
               <CartesianGrid strokeDasharray="0" stroke={GRID} vertical={false} />
               <XAxis
                 dataKey="tipo"
@@ -59,7 +62,13 @@ export default function Charts({ barras, linea, apiladoPorOrigen = true }: Props
                 cursor={{ fill: "rgba(255,255,255,0.04)" }}
               />
               {apiladoPorOrigen && (
+                // Arriba del área de plot, no abajo: ahí abajo ya está el
+                // espacio de las 14 etiquetas del eje X rotadas -45°, y una
+                // leyenda ahí se superponía con ellas.
                 <Legend
+                  verticalAlign="top"
+                  align="right"
+                  height={28}
                   wrapperStyle={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}
                   iconType="circle"
                   iconSize={8}
