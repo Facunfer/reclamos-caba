@@ -4,6 +4,7 @@ import {
   PUBLIC_SESSION_COOKIE,
   PUBLIC_SESSION_MAX_AGE_SECONDS,
 } from "@/lib/publicSession";
+import { getPublicAccounts } from "@/lib/publicAccounts";
 import { getClientKey, isRateLimited, registerFailedAttempt, clearAttempts } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -29,23 +30,22 @@ export async function POST(request: NextRequest) {
   const user = typeof body?.user === "string" ? body.user : "";
   const password = typeof body?.password === "string" ? body.password : "";
 
-  const masterUser = process.env.MASTER_USER;
-  const masterPass = process.env.MASTER_PASS;
+  // Se compara contra TODAS las cuentas (no se corta en el primer match) para
+  // que el tiempo de respuesta no varíe según cuál cuenta casi-matchea.
+  let matched: string | null = null;
+  for (const account of getPublicAccounts()) {
+    const ok = timingSafeEqual(user, account.user) && timingSafeEqual(password, account.pass);
+    if (ok) matched = account.role;
+  }
 
-  const credentialsConfigured = Boolean(masterUser && masterPass);
-  const ok =
-    credentialsConfigured &&
-    timingSafeEqual(user, masterUser!) &&
-    timingSafeEqual(password, masterPass!);
-
-  if (!ok) {
+  if (!matched) {
     registerFailedAttempt(clientKey);
     return NextResponse.json({ error: "Credenciales incorrectas." }, { status: 401 });
   }
 
   clearAttempts(clientKey);
 
-  const token = await createSessionToken();
+  const token = await createSessionToken(matched);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(PUBLIC_SESSION_COOKIE, token, {
     httpOnly: true,
