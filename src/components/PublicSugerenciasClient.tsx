@@ -2,7 +2,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
-import type { SugerenciaPublica, TipoSugerencia, FiltrosSugerenciasPublicas, BarrasTipo, LineaDia } from "@/types";
+import type { SugerenciaPublica, TipoSugerencia, FiltrosSugerenciasPublicas, BarrasTipoApilada, LineaDia } from "@/types";
 
 import { fetchComunasGeoJSON, getComunaForPoint, fetchBarriosGeoJSON, getBarrioForPoint } from "@/lib/geofence";
 
@@ -107,11 +107,12 @@ export default function PublicSugerenciasClient({ initialSugerencias, tipos }: P
         });
     }, [sugerenciasConArchivos, filtros, comunasGeo, barriosGeo, activePolygon]);
 
-    const barras = useMemo<BarrasTipo[]>(() => {
+    // Fuente única (no hay integración externa acá): una sola serie, sin apilar.
+    const barras = useMemo<BarrasTipoApilada[]>(() => {
         const m = new Map<string, number>();
         filteredSugerencias.forEach((s) => m.set(s.tipo_sugerencia, (m.get(s.tipo_sugerencia) ?? 0) + 1));
         return Array.from(m.entries())
-            .map(([tipo_reclamo, total]) => ({ tipo_reclamo, total }))
+            .map(([tipo, total]) => ({ tipo, mapa: total, mtr: 0, total }))
             .sort((a, b) => b.total - a.total);
     }, [filteredSugerencias]);
 
@@ -336,7 +337,7 @@ export default function PublicSugerenciasClient({ initialSugerencias, tipos }: P
             {/* Charts */}
             <div className="bg-black px-6 py-8">
                 <h2 className="text-xs font-black text-primary uppercase tracking-[0.3em] mb-8 text-center">Analítica de Sugerencias <span className="text-white">CABA</span></h2>
-                <Charts barras={barras} linea={linea} />
+                <Charts barras={barras} linea={linea} apiladoPorOrigen={false} />
             </div>
         </div>
     );
