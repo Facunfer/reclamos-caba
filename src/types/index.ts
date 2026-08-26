@@ -45,6 +45,7 @@ export interface Reclamo {
 export interface ReclamoPublico {
   id: string;
   tipo_reclamo: string;
+  subtipo: string | null;
   urgencia: Urgencia;
   descripcion: string;
   nombre_contacto: string;
@@ -60,6 +61,75 @@ export interface ReclamoPublico {
   creador_telefono: string | null;
   reclamo_archivos?: ReclamoArchivo[];
 }
+
+// ---------- Integración "Mandame Tu Reclamo" (MTR) ----------
+
+export type OrigenReclamo = "mapa" | "mtr";
+
+// Shape unificado que consume /public: mezcla reclamos nativos (origen
+// "mapa") con los de MTR (origen "mtr"). Ver src/app/api/public/reclamos.
+export interface ReclamoUnificado {
+  id: string; // "mapa:<uuid>" | "mtr:<uuid>", evita colisiones entre fuentes
+  origen: OrigenReclamo;
+  tipo: string; // taxonomía unificada, ver src/lib/taxonomia.ts
+  subtipo: string | null;
+  urgencia: Urgencia | null; // null para MTR (no tiene ese campo)
+  estado: string | null; // vocabulario distinto por origen, sin normalizar
+  descripcion: string | null;
+  direccion: string | null;
+  lat: number | null;
+  lng: number | null;
+  comuna: number | null; // derivada por point-in-polygon, no la cargada a mano
+  barrio: string | null; // ídem
+  fecha: string; // ISO
+  nombre_contacto: string | null;
+  dni: string | null; // solo MTR; null para nativos
+  telefono: string | null; // completo, sin enmascarar (decisión explícita)
+  email: string | null; // solo MTR; null para nativos
+  // Datos del empleado comunal que cargó el reclamo (solo origen "mapa")
+  creador_nombre: string | null;
+  creador_email: string | null;
+  creador_telefono: string | null;
+  // Adjuntos. Solo origen "mapa": el bucket de MTR es privado y requeriría
+  // URLs firmadas server-side (pendiente, ver docs/DEPLOY-MTR.md).
+  archivos: ReclamoArchivo[];
+  sin_geo: boolean;
+}
+
+export interface ReclamosUnificadosResponse {
+  reclamos: ReclamoUnificado[];
+  mtr_error: boolean;
+  total_mapa: number;
+  total_mtr: number;
+}
+
+export type FiltroOrigen = "todos" | "mapa" | "mtr";
+
+// "SIN_DATO" es una opción explícita del filtro de urgencia: los reclamos de
+// MTR no tienen ese campo y no deben desaparecer silenciosamente.
+export const URGENCIA_SIN_DATO = "SIN_DATO";
+
+export interface FiltrosUnificados {
+  origen: FiltroOrigen;
+  comuna: number | null;
+  barrio: string | null;
+  tipo: string | null;
+  subtipos: string[]; // selección múltiple; vacío = todos
+  urgencia: string | null; // Urgencia | "SIN_DATO" | null
+  desde: string | null;
+  hasta: string | null;
+}
+
+export const FILTROS_UNIFICADOS_INICIALES: FiltrosUnificados = {
+  origen: "todos",
+  comuna: null,
+  barrio: null,
+  tipo: null,
+  subtipos: [],
+  urgencia: null,
+  desde: null,
+  hasta: null,
+};
 
 export interface ReclamoConTipo extends Reclamo {
   tipos_reclamo?: { nombre: string };
@@ -171,6 +241,15 @@ export interface ProblemaCircuitoPublico {
 // Aggregated query result types
 export interface BarrasTipo {
   tipo_reclamo: string;
+  total: number;
+}
+
+// Barras del dashboard unificado: apiladas por origen. El tipo lo carga la
+// etiqueta del eje X, no el color — el color codifica el origen (2 series).
+export interface BarrasTipoApilada {
+  tipo: string;
+  mapa: number;
+  mtr: number;
   total: number;
 }
 
