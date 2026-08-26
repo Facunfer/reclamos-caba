@@ -2,7 +2,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import PublicPageClient from "@/components/PublicPageClient";
-import type { ReclamoPublico, TipoReclamo, ContactoComuna } from "@/types";
+import { getReclamosUnificados } from "@/lib/reclamosUnificados";
+import type { TipoReclamo, ContactoComuna } from "@/types";
 import Link from "next/link";
 import LogoutButton from "@/components/ui/LogoutButton";
 
@@ -11,9 +12,9 @@ export const revalidate = 60;
 export default async function PublicPage() {
   const supabase = await createClient();
 
-  const [{ data: tipos }, { data: reclamos }] = await Promise.all([
+  const [{ data: tipos }, dataUnificada] = await Promise.all([
     supabase.from("tipos_reclamo").select("id, nombre").eq("activo", true).order("nombre"),
-    supabase.from("reclamos_publicos").select("*").order("created_at", { ascending: false }),
+    getReclamosUnificados(),
   ]);
 
   // Contactos de comunas: se obtienen con admin client (auth.users no es accesible públicamente)
@@ -68,7 +69,7 @@ export default async function PublicPage() {
       </nav>
       <main className="flex-1 flex flex-col">
         <PublicPageClient
-          initialReclamos={(reclamos as ReclamoPublico[]) ?? []}
+          data={dataUnificada}
           tipos={(tipos as TipoReclamo[]) ?? []}
           contactosComunas={contactosComunas}
         />
