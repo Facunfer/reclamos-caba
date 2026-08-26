@@ -57,11 +57,16 @@ cat > /root/reclamos/.env.local <<'EOF'
 NEXT_PUBLIC_SUPABASE_URL=https://aysbehxlrgtacjdwmhsp.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<tu-anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<tu-service-role-key>
-NEXT_PUBLIC_MASTER_USER=<usuario-master-fuerte>
-NEXT_PUBLIC_MASTER_PASS=<contraseña-fuerte>
+MASTER_USER=<usuario-master-fuerte>
+MASTER_PASS=<contraseña-fuerte>
+PUBLIC_SESSION_SECRET=<generar-con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
 EOF
 chmod 600 /root/reclamos/.env.local
 ```
+
+> Desde la migración del gate de `/public` a validación server-side, estas variables
+> **no** llevan prefijo `NEXT_PUBLIC_` (si lo llevan, la app cae de nuevo en el defecto
+> inseguro anterior). Ver `DOCUMENTACION.md` §5.2.
 
 > `.env.local` NO está en git (gitignored). Nunca lo subas.
 

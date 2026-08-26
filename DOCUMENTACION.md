@@ -252,13 +252,17 @@ El sistema tiene **dos mecanismos de acceso totalmente distintos**, uno por áre
 
 La migración `004` marca como `can_create_users = true` a todos los perfiles preexistentes (los 15 usuarios comunales sembrados), de modo que cada comuna pueda gestionar su propio equipo.
 
-### 5.2 Dashboard público — gate client-side ("MASTER")
+### 5.2 Dashboard público — gate server-side ("MASTER")
 
-`/public/*` está envuelto por **`PublicAuthGuard`** (componente cliente):
-- Pide usuario/contraseña comparados contra `NEXT_PUBLIC_MASTER_USER` / `NEXT_PUBLIC_MASTER_PASS` (defaults `MASTER` / `123456`).
-- Si coinciden, guarda `public_auth = "true"` en `sessionStorage`.
+`/public/*` y `/api/public/*` están protegidos por el **middleware** (`src/middleware.ts`), que exige una cookie de sesión firmada antes de dejar pasar cualquier request:
 
-> ⚠️ **Esto NO es seguridad real**: las credenciales viven en variables `NEXT_PUBLIC_*` (expuestas al navegador) y la validación es 100 % client-side. Es un *speed bump* para evitar acceso casual, no una barrera criptográfica. Los datos que protege ya están filtrados por la vista pública (sin teléfono completo). Si se requiere control real, debe migrarse a auth server-side.
+- `POST /api/public/login` (`src/app/api/public/login/route.ts`) valida usuario/contraseña contra `MASTER_USER` / `MASTER_PASS` — variables **server-only, sin prefijo `NEXT_PUBLIC_`**, nunca llegan al bundle del navegador. La comparación usa un XOR en tiempo constante para no filtrar información por timing.
+- Incluye **rate limiting** en memoria (`src/lib/rateLimit.ts`): 5 intentos fallidos por IP cada 15 minutos, después responde `429`. Vive por proceso — se resetea si la app reinicia (PM2 fork mode = 1 instancia), suficiente para encarecer fuerza bruta sin depender de un servicio externo.
+- Si las credenciales son correctas, se emite una cookie `public_session` **httpOnly, secure (en producción) y firmada con HMAC-SHA256** (`src/lib/publicSession.ts`, secreto en `PUBLIC_SESSION_SECRET`), válida por 12hs.
+- El **middleware** verifica esa cookie en cada request a `/public/*` o `/api/public/*` (excepto `/public/login` y `/api/public/login`): si falta o es inválida/expirada, redirige a `/public/login` (o responde `401` JSON si es la API). La UI de login (`src/app/public/login/page.tsx`) nunca llega a renderizarse para un visitante ya autenticado, ni el contenido protegido llega a renderizarse para uno que no lo está — el corte pasa por el servidor, no por JavaScript del cliente.
+- `POST /api/public/logout` borra la cookie.
+
+> A diferencia del esquema anterior (contraseña en `NEXT_PUBLIC_*`, validación 100% client-side vía `sessionStorage`), acá la contraseña real nunca sale del servidor y no se puede leer inspeccionando el bundle del navegador. Sigue siendo una única contraseña compartida (no hay usuarios individuales ni auditoría de quién entró) — para eso habría que migrar a un esquema de cuentas real, pero el acceso casual/curioso queda efectivamente bloqueado.
 
 ### 5.3 Row Level Security (la autorización que importa)
 

@@ -1,8 +1,29 @@
 // src/middleware.ts
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { verifySessionToken, PUBLIC_SESSION_COOKIE } from "@/lib/publicSession";
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Gate del dashboard público (/public) y de su API server-side (/api/public).
+  // La validación de la contraseña MASTER es 100% server-side (route handler);
+  // acá solo se verifica que exista una cookie de sesión firmada y vigente.
+  const isPublicLoginRoute = pathname === "/public/login" || pathname === "/api/public/login";
+  const isPublicPage = pathname.startsWith("/public") && !isPublicLoginRoute;
+  const isPublicApi = pathname.startsWith("/api/public") && !isPublicLoginRoute;
+
+  if (isPublicPage || isPublicApi) {
+    const token = request.cookies.get(PUBLIC_SESSION_COOKIE)?.value;
+    const valid = await verifySessionToken(token);
+    if (!valid) {
+      if (isPublicApi) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+      }
+      return NextResponse.redirect(new URL("/public/login", request.url));
+    }
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -44,5 +65,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/panel/:path*", "/login"],
+  matcher: ["/panel/:path*", "/login", "/public/:path*", "/api/public/:path*"],
 };

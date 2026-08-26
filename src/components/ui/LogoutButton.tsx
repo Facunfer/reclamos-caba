@@ -3,9 +3,9 @@
 export default function LogoutButton() {
   return (
     <button
-      onClick={() => {
-        sessionStorage.removeItem("public_auth");
-        window.location.reload();
+      onClick={async () => {
+        await fetch("/api/public/logout", { method: "POST" });
+        window.location.href = "/public/login";
       }}
       className="text-[10px] uppercase font-bold tracking-widest text-indigo-200 hover:text-white transition-colors"
     >
