@@ -1,16 +1,26 @@
 // src/components/PublicPageClient.tsx
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
-import type { ReclamoPublico, TipoReclamo, FiltrosPublicos, BarrasTipo, LineaDia, ContactoComuna } from "@/types";
-
-import { fetchComunasGeoJSON, getComunaForPoint, fetchBarriosGeoJSON, getBarrioForPoint } from "@/lib/geofence";
+import type {
+  TipoReclamo,
+  BarrasTipoApilada,
+  LineaDia,
+  ContactoComuna,
+  FiltrosUnificados,
+  FiltroOrigen,
+  ReclamosUnificadosResponse,
+} from "@/types";
+import { FILTROS_UNIFICADOS_INICIALES, URGENCIA_SIN_DATO } from "@/types";
+import { useReclamosFiltrados } from "@/hooks/useReclamosFiltrados";
+import SubtipoMultiSelect from "@/components/ui/SubtipoMultiSelect";
+import { urlAbsolutaDeArchivo } from "@/lib/archivoUrl";
 
 const MapaLeaflet = dynamic(() => import("@/components/map/MapaLeaflet"), { ssr: false });
 const Charts = dynamic(() => import("@/components/charts/Charts"), { ssr: false });
 
 interface Props {
-  initialReclamos: ReclamoPublico[];
+  data: ReclamosUnificadosResponse;
   tipos: TipoReclamo[];
   contactosComunas?: ContactoComuna[];
 }
@@ -18,126 +28,39 @@ interface Props {
 const URGENCIAS = ["BAJA", "MEDIA", "ALTA"];
 const COMUNAS = Array.from({ length: 15 }, (_, i) => i + 1);
 
-function pointInPolygon(lat: number, lng: number, polygon: [number, number][]): boolean {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [lati, lngi] = polygon[i];
-    const [latj, lngj] = polygon[j];
-    const intersect = ((lngi > lng) !== (lngj > lng)) &&
-      (lat < (latj - lati) * (lng - lngi) / (lngj - lngi) + lati);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
+const ORIGENES: { value: FiltroOrigen; label: string }[] = [
+  { value: "todos", label: "Ambos" },
+  { value: "mapa", label: "Cargados en el mapa" },
+  { value: "mtr", label: "Mandame Tu Reclamo" },
+];
 
-export default function PublicPageClient({ initialReclamos, tipos, contactosComunas = [] }: Props) {
-  const [filtros, setFiltros] = useState<FiltrosPublicos>({});
-  const [statsData, setStatsData] = useState<{ barras: BarrasTipo[]; linea: LineaDia[] } | null>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
-  const [barriosGeo, setBarriosGeo] = useState<any>(null);
-  const [comunasGeo, setComunasGeo] = useState<any>(null);
-  const [reclamosConArchivos, setReclamosConArchivos] = useState<ReclamoPublico[]>(initialReclamos);
+export default function PublicPageClient({ data, tipos }: Props) {
+  const [filtros, setFiltros] = useState<FiltrosUnificados>(FILTROS_UNIFICADOS_INICIALES);
   const [drawingMode, setDrawingMode] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState<[number, number][]>([]);
   const [activePolygon, setActivePolygon] = useState<[number, number][] | null>(null);
 
-  useEffect(() => {
-    fetchComunasGeoJSON().then(setComunasGeo);
-    fetchBarriosGeoJSON().then(setBarriosGeo);
+  const { reclamos: filteredReclamos, barriosDisponibles, subtiposDisponibles, totales } =
+    useReclamosFiltrados(data.reclamos, filtros, activePolygon);
 
-    // Fetch files for initial reclamos
-    const fetchFiles = async () => {
-      const ids = initialReclamos.map(r => r.id);
-      if (ids.length === 0) return;
-
-      console.log(`[PublicPage] Fetching files for ${ids.length} reclamos...`);
-
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { data: archivos, error } = await supabase
-        .from("reclamo_archivos")
-        .select("*")
-        .in("reclamo_id", ids);
-
-      if (error) {
-        console.error("[PublicPage] Error fetching files:", error);
-        return;
-      }
-
-      console.log(`[PublicPage] Found ${archivos?.length || 0} files.`);
-
-      if (archivos) {
-        setReclamosConArchivos(prev => prev.map(r => {
-          const matchingArchivos = archivos.filter(a => a.reclamo_id === r.id);
-          return {
-            ...r,
-            reclamo_archivos: matchingArchivos
-          };
-        }));
-      }
-    };
-    fetchFiles();
-  }, [initialReclamos]);
-
-  // Compute neighborhoods available for the selected Comuna
-  const availableBarrios = useMemo(() => {
-    if (!filtros.comuna || !barriosGeo) return [];
-    return barriosGeo.features
-      .filter((f: any) => {
-        const c = f.properties.comuna || f.properties.COMUNA;
-        return Number(c) === Number(filtros.comuna);
-      })
-      .map((f: any) => f.properties.nombre || f.properties.BARRIO || f.properties.barrio || f.properties.NOMBRE)
-      .sort();
-  }, [filtros.comuna, barriosGeo]);
-
-  // Client-side filter on initial data
-  const filteredReclamos = useMemo(() => {
-    return reclamosConArchivos.filter((r) => {
-      // Filtro por comuna basado en Geofencing
-      if (filtros.comuna) {
-        if (!r.lat || !r.lng) return false;
-        if (comunasGeo) {
-          const comunaAsignada = getComunaForPoint({ lat: r.lat, lng: r.lng }, comunasGeo);
-          if (comunaAsignada !== Number(filtros.comuna)) return false;
-        } else {
-          if (r.comuna_id !== Number(filtros.comuna)) return false;
-        }
-      }
-
-      // Filtro por barrio basado en Geofencing
-      if (filtros.barrio && r.lat && r.lng && barriosGeo) {
-        const barrioAsignado = getBarrioForPoint({ lat: r.lat, lng: r.lng }, barriosGeo);
-        if (barrioAsignado !== filtros.barrio) return false;
-      }
-
-      if (filtros.tipo && r.tipo_reclamo !== filtros.tipo) return false;
-      if (filtros.urgencia && r.urgencia !== filtros.urgencia) return false;
-      if (filtros.desde && r.created_at < filtros.desde) return false;
-      if (filtros.hasta && r.created_at > filtros.hasta + "T23:59:59") return false;
-
-      if (activePolygon && activePolygon.length > 2) {
-        if (!r.lat || !r.lng) return false;
-        if (!pointInPolygon(r.lat, r.lng, activePolygon)) return false;
-      }
-
-      return true;
+  // Barras apiladas por origen: el tipo lo identifica la etiqueta del eje X,
+  // el color codifica el origen (2 series).
+  const barras = useMemo<BarrasTipoApilada[]>(() => {
+    const m = new Map<string, BarrasTipoApilada>();
+    filteredReclamos.forEach((r) => {
+      const fila = m.get(r.tipo) ?? { tipo: r.tipo, mapa: 0, mtr: 0, total: 0 };
+      if (r.origen === "mapa") fila.mapa += 1;
+      else fila.mtr += 1;
+      fila.total += 1;
+      m.set(r.tipo, fila);
     });
-  }, [reclamosConArchivos, filtros, comunasGeo, barriosGeo, activePolygon]);
-
-  // Aggregate locally for charts
-  const barras = useMemo<BarrasTipo[]>(() => {
-    const m = new Map<string, number>();
-    filteredReclamos.forEach((r) => m.set(r.tipo_reclamo, (m.get(r.tipo_reclamo) ?? 0) + 1));
-    return Array.from(m.entries())
-      .map(([tipo_reclamo, total]) => ({ tipo_reclamo, total }))
-      .sort((a, b) => b.total - a.total);
+    return Array.from(m.values()).sort((a, b) => b.total - a.total);
   }, [filteredReclamos]);
 
   const linea = useMemo<LineaDia[]>(() => {
     const m = new Map<string, number>();
     filteredReclamos.forEach((r) => {
-      const fecha = r.created_at?.slice(0, 10) ?? "";
+      const fecha = r.fecha?.slice(0, 10) ?? "";
       m.set(fecha, (m.get(fecha) ?? 0) + 1);
     });
     return Array.from(m.entries())
@@ -145,15 +68,23 @@ export default function PublicPageClient({ initialReclamos, tipos, contactosComu
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
   }, [filteredReclamos]);
 
-  function setFiltro(key: keyof FiltrosPublicos, value: string | null) {
-    setFiltros((prev) => ({ ...prev, [key]: value || null }));
+  function setFiltro<K extends keyof FiltrosUnificados>(key: K, value: FiltrosUnificados[K]) {
+    setFiltros((prev) => ({ ...prev, [key]: value }));
   }
 
   function clearFiltros() {
-    setFiltros({});
+    setFiltros(FILTROS_UNIFICADOS_INICIALES);
   }
 
-  const hasFilters = Object.values(filtros).some(Boolean);
+  const hasFilters =
+    filtros.origen !== "todos" ||
+    filtros.comuna != null ||
+    Boolean(filtros.barrio) ||
+    Boolean(filtros.tipo) ||
+    filtros.subtipos.length > 0 ||
+    Boolean(filtros.urgencia) ||
+    Boolean(filtros.desde) ||
+    Boolean(filtros.hasta);
 
   const exportToCSV = () => {
     const escapeCsvField = (field: any) => {
@@ -161,94 +92,146 @@ export default function PublicPageClient({ initialReclamos, tipos, contactosComu
       return `"${str.replace(/"/g, '""')}"`;
     };
 
-    const headers = ["ID", "Tipo", "Comuna", "Urgencia", "Estado", "Dirección", "Descripción", "Fecha de creación", "Latitud", "Longitud", "Fotos", "Cargado por (Nombre)", "Cargado por (Email)", "Cargado por (Teléfono)", "Cargado por (Comuna)"]
-      .map(escapeCsvField)
-      .join(",");
+    const headers = [
+      "ID", "Origen", "Tipo", "Subtipo", "Comuna", "Barrio", "Urgencia", "Estado",
+      "Dirección", "Descripción", "Fecha de creación", "Latitud", "Longitud",
+      "Contacto (Nombre)", "Contacto (DNI)", "Contacto (Teléfono)", "Contacto (Email)",
+      "Fotos", "Cargado por (Nombre)", "Cargado por (Email)", "Cargado por (Teléfono)",
+    ].map(escapeCsvField).join(";");
 
-    const rows = filteredReclamos.map(r => {
-      const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
-      const fotosUrls = (r.reclamo_archivos || [])
-        .map(a => `${baseUrl}/storage/v1/object/public/reclamos-fotos/${a.storage_path}`)
+    // Absolutas: el CSV se abre fuera del navegador que lo generó.
+    const origin = window.location.origin;
+
+    const rows = filteredReclamos.map((r) => {
+      const fotosUrls = r.archivos
+        .map((a) => urlAbsolutaDeArchivo(r.origen, a, origin))
         .join(" | ");
 
       return [
         r.id,
-        r.tipo_reclamo,
-        r.comuna_id,
-        r.urgencia,
-        r.estado,
-        r.direccion_normalizada || r.direccion_raw,
-        r.descripcion || "",
-        r.created_at,
-        r.lat,
-        r.lng,
+        r.origen === "mapa" ? "Mapa" : "Mandame Tu Reclamo",
+        r.tipo,
+        r.subtipo ?? "",
+        r.comuna ?? "",
+        r.barrio ?? "",
+        r.urgencia ?? "Sin dato",
+        r.estado ?? "",
+        r.direccion ?? "",
+        r.descripcion ?? "",
+        r.fecha,
+        r.lat ?? "",
+        r.lng ?? "",
+        r.nombre_contacto ?? "",
+        r.dni ?? "",
+        r.telefono ?? "",
+        r.email ?? "",
         fotosUrls,
-        r.creador_nombre || "",
-        r.creador_email || "",
-        r.creador_telefono || "",
-        r.comuna_id ? `Comuna ${String(r.comuna_id).padStart(2, "0")}` : "",
-      ].map(escapeCsvField).join(",");
+        r.creador_nombre ?? "",
+        r.creador_email ?? "",
+        r.creador_telefono ?? "",
+      ].map(escapeCsvField).join(";");
     });
 
     const csvContent = [headers, ...rows].join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const date = new Date().toISOString().split('T')[0];
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     link.setAttribute("href", url);
-    link.setAttribute("download", `reclamos_caba_export_${date}.csv`);
-    link.style.visibility = 'hidden';
+    link.setAttribute("download", `reclamos_caba_export_${stamp}.csv`);
+    link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="flex flex-col gap-0 flex-1 bg-black min-h-screen">
+      {data.mtr_error && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2 text-[10px] font-bold text-amber-400 uppercase tracking-widest">
+          ⚠ No se pudieron cargar los reclamos de Mandame Tu Reclamo. Se muestran solo los cargados en el mapa.
+        </div>
+      )}
+
       {/* Filtros */}
       <div className="bg-black border-b border-card-border px-6 py-4 shadow-2xl z-10">
         <div className="flex flex-wrap gap-4 items-end">
-          <FilterSelect label="Comuna" value={String(filtros.comuna ?? "")} onChange={(v) => {
-            setFiltro("comuna", v || null);
-            setFiltro("barrio", null); // Reset barrio when comuna changes
-          }}>
+          {/* Origen */}
+          <div>
+            <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1 ml-1">Origen</label>
+            <div className="flex rounded overflow-hidden border border-card-border">
+              {ORIGENES.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => setFiltro("origen", o.value)}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                    filtros.origen === o.value
+                      ? "bg-indigo-600 text-white"
+                      : "bg-transparent text-muted hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <FilterSelect
+            label="Comuna"
+            value={String(filtros.comuna ?? "")}
+            onChange={(v) => {
+              setFiltros((prev) => ({ ...prev, comuna: v ? Number(v) : null, barrio: null }));
+            }}
+          >
             <option value="" className="bg-black text-white">Todas</option>
             {COMUNAS.map((c) => (
               <option key={c} value={c} className="bg-black text-white">Comuna {String(c).padStart(2, "0")}</option>
             ))}
           </FilterSelect>
 
-          {filtros.comuna && (
-            <FilterSelect label="Barrio" value={filtros.barrio ?? ""} onChange={(v) => setFiltro("barrio", v)}>
+          {filtros.comuna != null && (
+            <FilterSelect label="Barrio" value={filtros.barrio ?? ""} onChange={(v) => setFiltro("barrio", v || null)}>
               <option value="" className="bg-black text-white">Todos los barrios</option>
-              {availableBarrios.map((b) => (
+              {barriosDisponibles.map((b) => (
                 <option key={b} value={b} className="bg-black text-white">{b}</option>
               ))}
             </FilterSelect>
           )}
 
-          <FilterSelect label="Tipo" value={filtros.tipo ?? ""} onChange={(v) => setFiltro("tipo", v)}>
+          <FilterSelect
+            label="Tipo"
+            value={filtros.tipo ?? ""}
+            onChange={(v) => setFiltros((prev) => ({ ...prev, tipo: v || null, subtipos: [] }))}
+          >
             <option value="" className="bg-black">Todos</option>
             {tipos.map((t) => (
               <option key={t.id} value={t.nombre} className="bg-black text-white">{t.nombre}</option>
             ))}
           </FilterSelect>
 
-          <FilterSelect label="Urgencia" value={filtros.urgencia ?? ""} onChange={(v) => setFiltro("urgencia", v)}>
+          <SubtipoMultiSelect
+            opciones={subtiposDisponibles}
+            seleccionados={filtros.subtipos}
+            onChange={(subtipos) => setFiltro("subtipos", subtipos)}
+          />
+
+          <FilterSelect label="Urgencia" value={filtros.urgencia ?? ""} onChange={(v) => setFiltro("urgencia", v || null)}>
             <option value="" className="bg-black">Todas</option>
             {URGENCIAS.map((u) => <option key={u} value={u} className="bg-black">{u}</option>)}
+            <option value={URGENCIA_SIN_DATO} className="bg-black">Sin dato</option>
           </FilterSelect>
 
           <div className="flex gap-2">
             <div>
               <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1 ml-1">Desde</label>
-              <input type="date" value={filtros.desde ?? ""} onChange={(e) => setFiltro("desde", e.target.value)}
+              <input type="date" value={filtros.desde ?? ""} onChange={(e) => setFiltro("desde", e.target.value || null)}
                 className="lla-input px-3 py-1.5 text-[10px] focus:outline-none"
               />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1 ml-1">Hasta</label>
-              <input type="date" value={filtros.hasta ?? ""} onChange={(e) => setFiltro("hasta", e.target.value)}
+              <input type="date" value={filtros.hasta ?? ""} onChange={(e) => setFiltro("hasta", e.target.value || null)}
                 className="lla-input px-3 py-1.5 text-[10px] focus:outline-none"
               />
             </div>
@@ -261,9 +244,22 @@ export default function PublicPageClient({ initialReclamos, tipos, contactosComu
               </button>
             )}
 
-            <span className="text-[10px] text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded font-black uppercase tracking-tighter">
-              {filteredReclamos.length} RECLAMOS ENCONTRADOS
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded font-black uppercase tracking-tighter">
+                {totales.total} RECLAMOS
+              </span>
+              <span className="text-[10px] text-zinc-400 border border-card-border px-2 py-1.5 rounded font-bold uppercase tracking-tighter">
+                Mapa {totales.mapa}
+              </span>
+              <span className="text-[10px] text-zinc-400 border border-card-border px-2 py-1.5 rounded font-bold uppercase tracking-tighter">
+                MTR {totales.mtr}
+              </span>
+              {totales.sinGeo > 0 && (
+                <span className="text-[10px] text-amber-400/80 border border-amber-500/20 px-2 py-1.5 rounded font-bold uppercase tracking-tighter">
+                  Sin geo {totales.sinGeo}
+                </span>
+              )}
+            </div>
 
             <button
               onClick={exportToCSV}
