@@ -2,7 +2,9 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { api } from "@/lib/rutas";
 import type { TipoReclamo, Urgencia } from "@/types";
 
 interface Props {
@@ -12,6 +14,66 @@ interface Props {
 }
 
 const URGENCIAS: Urgencia[] = ["BAJA", "MEDIA", "ALTA"];
+
+
+/**
+ * Deja el dropdown de direcciones a la vista cuando el teclado táctil tapa
+ * media pantalla.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * Por qué hace falta y por qué no alcanza con `scrollIntoView`
+ * ─────────────────────────────────────────────────────────────────────────
+ * Este es EL momento crítico del alta de un reclamo desde la calle: el usuario
+ * tipeó la dirección, el teclado está abierto ocupando ~45% del alto, y la
+ * lista de sugerencias aparece justo debajo del campo. Si queda tapada, el
+ * submit se bloquea —el formulario exige una dirección validada— y desde afuera
+ * parece que el sistema "no deja cargar".
+ *
+ * `el.scrollIntoView({ block: "nearest" })` no sirve solo: mide contra el
+ * viewport de layout, que NO se achica cuando sale el teclado. Para el
+ * navegador el dropdown "ya está visible" aunque el usuario no lo vea.
+ *
+ * `window.visualViewport` sí refleja el área realmente visible. Se corrige solo
+ * lo que sobra, y solo si sobra: si el dropdown ya entra, esto no hace nada.
+ *
+ * En un navegador de escritorio `visualViewport` existe pero coincide con el
+ * viewport de layout, así que el `if` nunca se cumple y el comportamiento no
+ * cambia.
+ *
+ * Verificado a 375x440 (el alto útil que queda con el teclado abierto): con el
+ * campo pegado al borde inferior, la lista de sugerencias entra entera.
+ */
+function useDropdownVisible(ref: React.RefObject<HTMLDivElement | null>, visible: boolean) {
+  useEffect(() => {
+    if (!visible) return;
+    const el = ref.current;
+    if (!el) return;
+
+    // Se mide acá, sincrónicamente, y NO adentro de un `requestAnimationFrame`.
+    // Dos motivos:
+    //
+    //  1. No hace falta: el efecto corre después del commit de React, así que
+    //     el dropdown ya está en el DOM y `getBoundingClientRect()` fuerza el
+    //     layout y devuelve la posición final.
+    //  2. `requestAnimationFrame` NO dispara cuando la pestaña está oculta
+    //     (`document.hidden`). Con el rAF, esta corrección quedaba muerta en
+    //     cualquier contexto sin pintado — que es, entre otros, como se prueba.
+    //     Un arreglo que no se puede verificar termina siendo un arreglo que
+    //     nadie sabe si funciona.
+    const altoVisible = window.visualViewport?.height ?? window.innerHeight;
+    // 12px de aire abajo: pegado al borde del teclado se lee como cortado.
+    const sobra = el.getBoundingClientRect().bottom - (altoVisible - 12);
+
+    // Sin `behavior: "smooth"`, y no es un descuido: `scrollBy` con `smooth`
+    // resultó ser un **no-op** en pruebas —`scrollY` no se movía ni un pixel—
+    // mientras que la forma de dos argumentos funcionaba.
+    //
+    // Además, acá el salto instantáneo es lo correcto: el viewport ya se está
+    // moviendo solo porque el teclado está subiendo, así que la corrección se
+    // funde con ese movimiento en vez de leerse como un salto aparte.
+    if (sobra > 0) window.scrollBy(0, sobra);
+  }, [ref, visible]);
+}
 
 export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
   const router = useRouter();
@@ -76,6 +138,8 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
   }, [form.direccion_raw]);
 
   const fetchController = useRef<AbortController | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  useDropdownVisible(dropdownRef, showSuggestions && suggestions.length > 0);
 
   useEffect(() => {
     if (debouncedDireccion.length > 3 && !skipNextFetch.current) {
@@ -98,7 +162,7 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
     // setSuggestions([]); 
 
     try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}&suggestions=true`, {
+      const res = await fetch(api(`/api/geocode?q=${encodeURIComponent(q)}&suggestions=true`), {
         signal: fetchController.current.signal
       });
       const data = await res.json();
@@ -134,7 +198,7 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
   async function geocodeAddress(address: string) {
     setGeoStatus("loading");
     try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(address)}`);
+      const res = await fetch(api(`/api/geocode?q=${encodeURIComponent(address)}`));
       if (!res.ok) throw new Error("API fail");
       const data = await res.json();
       if (data.lat && data.lng) {
@@ -253,7 +317,11 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
                 key={u}
                 type="button"
                 onClick={() => set("urgencia", u)}
-                className={`flex-1 py-3 rounded-lg text-xs font-black tracking-tighter transition-all transform active:scale-95 ${form.urgencia === u
+                                // `min-h-11` = 44px. Estos tres botones son el único control
+                // de urgencia y están pegados: a 41px, fallar uno marca el de
+                // al lado y el reclamo entra con la prioridad equivocada, sin
+                // que nadie lo note hasta que importe.
+                className={`flex min-h-11 flex-1 items-center justify-center rounded-lg text-xs font-black tracking-tighter transition-all transform active:scale-95 ${form.urgencia === u
                   ? urgenciaStyle(u)
                   : "bg-black border border-card-border text-muted hover:border-muted/50"
                   }`}
@@ -298,13 +366,19 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
 
         {/* Sugerencias Dropdown */}
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute z-50 left-0 right-0 mt-1 bg-black border border-card-border rounded-lg shadow-2xl max-h-60 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+          <div
+            ref={dropdownRef}
+            className="absolute z-50 left-0 right-0 mt-1 bg-black border border-card-border rounded-lg shadow-2xl max-h-60 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+          >
             {suggestions.map((s, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => handleSelectSuggestion(s)}
-                className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-wider text-muted hover:text-white hover:bg-primary/20 border-b border-white/5 last:border-none transition-colors"
+                // `min-h-11` = 44px. Este dropdown se usa con el teclado táctil abierto
+                // tapando media pantalla, o sea con poco espacio y apuro: es el peor
+                // momento para tener renglones de 38px pegados uno al otro.
+                className="flex min-h-11 w-full items-center text-left px-4 py-3 text-xs font-bold uppercase tracking-wider text-muted hover:text-white hover:bg-primary/20 border-b border-white/5 last:border-none transition-colors"
               >
                 {s.direccion}
               </button>
@@ -343,14 +417,33 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
         <label className="block text-xs font-bold text-muted uppercase tracking-widest ml-1">Fotos del Reclamo (Máximo 5)</label>
         <div className="flex flex-wrap gap-4">
           {previews.map((url, i) => (
-            <div key={i} className="relative w-24 h-24 border border-card-border rounded-lg overflow-hidden group">
-              <img src={url} alt="preview" className="w-full h-full object-cover" />
+            <div key={i} className="relative w-24 h-24">
+              {/* El recorte va en un div interno: si estuviera en el de afuera,
+                  `overflow-hidden` recortaría también la cruz, que sobresale. */}
+              <div className="h-full w-full overflow-hidden rounded-lg border border-card-border">
+                <img src={url} alt="preview" className="w-full h-full object-cover" />
+              </div>
               <button
                 type="button"
                 onClick={() => removeFile(i)}
-                className="absolute inset-0 bg-red-600/80 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center font-bold text-xs"
+                aria-label="Quitar este adjunto"
+                title="Quitar"
+                // ANTES: un <button> transparente que tapaba los 96px enteros y
+                // solo se hacía visible con `group-hover`. En un teléfono no hay
+                // hover: el botón quedaba invisible PERO seguía recibiendo el
+                // tap, así que tocar una foto para verla más grande la borraba,
+                // sin aviso y sin forma de deshacer.
+                //
+                // Ahora es una cruz siempre visible en la esquina. El área
+                // táctil es de 44px (`h-11 w-11`) y el círculo de 28px: se ve
+                // chica y se toca cómoda, que es lo que se quiere en un control
+                // destructivo — visible, pero no tan grande como para llevárselo
+                // puesto al hacer scroll.
+                className="absolute -right-2 -top-2 z-10 flex h-11 w-11 items-center justify-center"
               >
-                Eliminar
+                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-black bg-red-600 text-xs font-bold text-white shadow-lg">
+                  ✕
+                </span>
               </button>
             </div>
           ))}
@@ -387,12 +480,12 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
         >
           {loading ? "Procesando..." : "Ingresar Reclamo"}
         </button>
-        <a
+        <Link
           href="/panel"
           className="lla-card px-8 py-4 text-muted hover:text-white hover:border-muted transition-all text-center uppercase tracking-widest text-[10px] font-bold"
         >
           Volver
-        </a>
+        </Link>
       </div>
     </form>
   );

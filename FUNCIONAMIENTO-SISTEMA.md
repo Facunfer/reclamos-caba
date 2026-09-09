@@ -2,7 +2,7 @@
 
 > Explicación integral del sistema para alguien que no lo desarrolló: qué es, cómo está armado, cómo fluyen los datos y cómo se opera.
 > Generado a partir del código del proyecto y de la base de datos real en producción.
-> **Fecha:** 2026-08-25
+> **Fecha:** 2026-09-08
 
 ---
 
@@ -151,7 +151,7 @@ reclamos ──────< reclamo_archivos >────── sugerencias
 
 1. **Datos personales expuestos en `/public`** — los reclamos de MTR se muestran con nombre, DNI, teléfono y email completos, y sus fotos abren por link sin login. Detrás hay una sola contraseña compartida, sin usuarios individuales ni registro de accesos. Es la decisión tomada, pero conviene revisarla si el círculo de gente con la clave se agranda.
 2. **Una sola contraseña para todo el dashboard** — no se puede dar de baja el acceso a una persona sin cambiársela a todas.
-3. **El panel no permite cambiar el estado de un reclamo desde la interfaz** todavía (la base ya lo permite, falta el botón).
+3. ~~**El panel no permite cambiar el estado de un reclamo desde la interfaz**~~ — ya se puede: se toca el reclamo y en la ficha está el control. Ojo con leer los datos viejos: los 177 reclamos cargados hasta ahora figuran todos como "nuevo" porque hasta hace poco no había forma de decir otra cosa, no porque estén sin atender.
 4. **Las fotos de los reclamos comunales están en un bucket público** — cualquiera con el link directo puede verlas.
 5. **Las contraseñas de prueba de las 15 comunas son `123456`** — hay que rotarlas antes de considerar el sistema en uso "real" y seguro.
 6. **En el mapa, con 14 tipos hay colores que no se distinguen entre sí** (y bastantes más para personas daltónicas). Está medido y asumido: por eso el tipo siempre se puede leer en el popup, la leyenda y el filtro.
@@ -164,8 +164,20 @@ reclamos ──────< reclamo_archivos >────── sugerencias
 
 | Quiero... | Voy a... |
 |---|---|
-| Ver el mapa público de reclamos | `https://reclamos.alianzalalibertadavanzacaba.com/public` |
-| Cargar un reclamo como comuna | `.../login` → entrar con `cN@reclamos.gob.ar` → `.../panel/nuevo` |
-| Ver el directorio de equipos por comuna | `.../public/comunas` |
-| Ver el mapa de circuitos electorales | `.../public/circuitos` |
+| Cargar un reclamo siendo referente | Entrar al **Portal Territorial** y tocar "Reclamos/Sugerencias". Ya no pide contraseña: la sesión se abre sola. |
+| Ver el mapa público de reclamos | `https://mapa.alianzalalibertadavanzacaba.com/reclamos/public` |
+| Entrar al panel sin pasar por el Portal | `.../reclamos/login` → `cN@reclamos.gob.ar` |
+| Ver el directorio de equipos por comuna | `.../reclamos/public/comunas` |
+| Ver el mapa de circuitos electorales | `.../reclamos/public/circuitos` |
 | Administrar la base de datos | Panel de Supabase, proyecto **"reclamos"** |
+
+> **Ojo con las URLs de este documento.** Dos cosas cambiaron:
+>
+> 1. El dominio real es **`mapa.`**, no `reclamos.` — este último nunca existió,
+>    no tiene registro DNS. La app quedó viviendo en el dominio de la app vieja
+>    que se llamaba "mapa".
+> 2. Todo cuelga ahora de **`/reclamos`**, porque el sistema pasó a servirse
+>    también desde adentro del Portal Territorial
+>    (`portal.alianzalalibertadavanzacaba.com/reclamos`). Los links viejos
+>    redirigen solos, así que lo que esté guardado en el teléfono de alguien
+>    sigue funcionando.

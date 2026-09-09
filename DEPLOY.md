@@ -7,8 +7,20 @@ sin afectarlas. Esta app usa el puerto **3001**.
 - **Repo:** https://github.com/Facunfer/reclamos-caba.git
 - **Ruta en el server:** `/root/reclamos`
 - **Proceso PM2:** `reclamos` (puerto 3001)
-- **Dominio sugerido:** `reclamos.alianzalalibertadavanzacaba.com`
+- **Dominio propio:** `mapa.alianzalalibertadavanzacaba.com`
+- **También accesible desde:** `portal.alianzalalibertadavanzacaba.com/reclamos`
+  (mismo proceso, servido adentro del Portal Territorial — ver más abajo)
 - **IP del VPS:** `145.223.92.253`
+
+> ⚠️ **`reclamos.alianzalalibertadavanzacaba.com` no existe.** Versiones
+> anteriores de este documento lo daban por hecho como "dominio sugerido", pero
+> nunca se creó el registro DNS: hoy no resuelve. La app quedó viviendo en
+> `mapa.`, que era el dominio de la app anterior de ese nombre.
+
+> ⚠️ **Todas las rutas llevan el prefijo `/reclamos`** desde la integración con
+> el Portal. El login del panel es `/reclamos/login`, no `/login`. Las URLs
+> viejas redirigen con 301, así que lo que la gente tenga guardado sigue
+> funcionando.
 
 ---
 
@@ -119,9 +131,77 @@ Certbot reescribe el bloque nginx agregando el `listen 443 ssl` y el redirect 80
 (igual que en `mapa`).
 
 ### 7. Verificar
-Abrí `https://reclamos.alianzalalibertadavanzacaba.com` →
-- `/` redirige a `/public` (gate MASTER).
-- `/login` permite entrar al panel comunal.
+Abrí `https://mapa.alianzalalibertadavanzacaba.com/reclamos` →
+- `/reclamos` redirige a `/reclamos/public` (gate MASTER).
+- `/reclamos/login` permite entrar al panel comunal.
+- `https://mapa.alianzalalibertadavanzacaba.com/login` redirige con 301 al prefijo.
+
+---
+
+## 🔗 Integración con el Portal Territorial
+
+Esta app se sirve **también** bajo `/reclamos` del origen del Portal, y el botón
+del Portal abre sesión sin pedir contraseña. Detalle completo en
+`DOCUMENTACION.md` §11. Lo que hace falta en el servidor:
+
+### A. Variables de entorno nuevas (`/root/reclamos/.env.local`)
+
+```bash
+# Tiene que ser EXACTAMENTE el mismo string que en el .env.local del Portal.
+# Generar UNA vez y pegarlo en los dos:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+SSO_BRIDGE_SECRET=<64-hex>
+
+# A dónde vuelve el botón "← Portal" del panel.
+NEXT_PUBLIC_PORTAL_URL=https://portal.alianzalalibertadavanzacaba.com/
+```
+
+Si `SSO_BRIDGE_SECRET` falta o difiere entre los dos lados, el SSO queda caído
+—el botón deposita a la gente en `/reclamos/login?sso=invalido`— pero el login
+manual con `cN@reclamos.gob.ar` sigue funcionando. Degrada, no bloquea.
+
+### B. Migración de la base
+
+Correr `supabase/011_sso_accesos.sql` en el SQL Editor del proyecto **reclamos**.
+Crea la tabla del registro de accesos. Es idempotente.
+
+Si no se corre, el SSO igual funciona: cada canje deja un error en `pm2 logs
+reclamos` y no se guarda el registro. Se eligió que la auditoría falle en
+silencio antes que dejar afuera a las 15 comunas por una tabla faltante.
+
+### C. nginx
+
+Los dos bloques `location` están en `deploy/nginx-reclamos-en-portal.conf` del
+repo **`portal-crm`**, con las instrucciones y la verificación. Uno va en el
+vhost del Portal y otro en el de `mapa.`.
+
+**Antes de tocar nginx, verificar los nombres reales** — la documentación de los
+dos proyectos se contradice sobre qué puerto usa cada app:
+
+```bash
+ss -ltnp | grep -E ':(3000|3001|3002|3003|8501)'
+pm2 list
+ls -l /etc/nginx/sites-enabled/
+```
+
+Y `nginx -t` antes de cualquier `reload`: este nginx sirve también al Portal, la
+consola y la app Streamlit.
+
+### D. Orden del despliegue
+
+El `basePath` y el proxy tienen que llegar juntos, o hay una ventana en la que
+la app no responde en ninguna URL:
+
+1. nginx primero (los `location` nuevos no rompen nada mientras la app siga
+   respondiendo en la raíz — el `proxy_pass` a `/reclamos/` va a dar 404 y listo).
+2. `nginx -t && systemctl reload nginx`.
+3. Recién ahí: `git pull`, `npm run build`, `pm2 restart reclamos` acá.
+4. Y el Portal: `git pull`, `npm run build`, `pm2 restart` del proceso del CRM.
+
+**Rollback:** comentar los dos bloques de nginx, sacar `basePath` de
+`next.config.ts`, rebuild y restart. El Portal no necesita rollback: su único
+cambio del lado del usuario es el `href` del botón, que sin el proxy da 404 en
+vez de llevar a otro lado.
 
 ---
 
@@ -134,3 +214,7 @@ Abrí `https://reclamos.alianzalalibertadavanzacaba.com` →
 | Cambios no se ven | ¿Corriste `npm run build` antes del `pm2 restart`? |
 | Build OOM | Agregar swap (paso 3) |
 | Puerto ocupado | `sudo ss -ltnp | grep 3001` — elegí otro puerto y actualizá `ecosystem.config.js` + nginx |
+| El botón del Portal cae en `?sso=invalido` | `SSO_BRIDGE_SECRET` distinto entre los dos `.env.local`, o falta en uno. `pm2 logs reclamos` dice el motivo exacto |
+| El botón del Portal cae en `?sso=expirado` | El pase dura 60s. Si pasa siempre, revisá que los relojes de los dos procesos estén en hora (`timedatectl`) |
+| SSO entra pero no queda registro | Falta correr `supabase/011_sso_accesos.sql`. Está en los logs de PM2 |
+| Un redirect manda a `/login` sin el prefijo | El build se hizo sin `basePath`. `npm run build` de nuevo y `pm2 restart` |

@@ -54,19 +54,30 @@ export default async function UsuariosPage() {
           {authError && <div>Error auth: {authError.message}</div>}
         </div>
       )}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Usuarios del Sistema</h1>
           <p className="text-muted text-xs mt-1">{perfiles?.length ?? 0} usuarios registrados</p>
         </div>
         {miPerfil.can_create_users && (
-          <Link href="/panel/usuarios/nuevo" className="lla-btn-primary px-5 py-2.5 text-[10px] font-black uppercase tracking-widest">
+          <Link
+            href="/panel/usuarios/nuevo"
+            // 44px en teléfono. Es la única acción de esta pantalla.
+            className="lla-btn-primary flex min-h-11 shrink-0 items-center px-5 text-[10px] font-black uppercase tracking-widest md:min-h-0 md:py-2.5"
+          >
             + Nuevo Usuario
           </Link>
         )}
       </div>
 
-      <div className="lla-card overflow-x-auto">
+      {/*
+        Escritorio: la tabla de siempre. Teléfono: tarjetas.
+        Cinco columnas de las cuales una es un email completo no entran en
+        375px; con `overflow-x-auto` la tabla scrollea de costado y se pierde la
+        columna de referencia, que es la peor forma de leer una lista.
+        Mismo criterio que en el listado de reclamos.
+      */}
+      <div className="hidden md:block lla-card overflow-x-auto">
         <table className="min-w-full text-xs">
           <thead>
             <tr className="bg-black/40 text-left text-[10px] text-muted uppercase tracking-[0.2em] font-bold border-b border-card-border">
@@ -122,6 +133,56 @@ export default async function UsuariosPage() {
           <div className="text-center text-muted py-16 text-xs">No hay usuarios registrados.</div>
         )}
       </div>
+
+      {/* ═══════════ Teléfono ═══════════ */}
+      <ul className="md:hidden flex flex-col gap-3">
+        {perfiles?.map((p) => (
+          <li key={p.user_id} className="lla-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              {/* `break-all`: un email largo sin espacios no envuelve solo y
+                  desborda la tarjeta. */}
+              <span className="text-sm font-medium text-white break-all">
+                {emailPorId[p.user_id] ?? p.user_id}
+              </span>
+              <span className="shrink-0 bg-primary/10 text-primary border border-primary/20 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {String(p.comuna_id).padStart(2, "0")}
+              </span>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+              {p.user_id === user.id && (
+                <span className="bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded-full font-bold uppercase">
+                  Vos
+                </span>
+              )}
+              {/*
+                Los permisos se muestran solo cuando los TIENE. En la tabla hay
+                una columna "No" por cada uno porque una columna vacía se ve
+                rota; en una tarjeta, un renglón que dice "Puede crear usuarios:
+                No" ocupa lugar para no informar nada.
+              */}
+              {p.can_create_users && (
+                <span className="bg-green-950/40 text-green-400 border border-green-900/40 px-2 py-0.5 rounded-full font-bold">
+                  Puede crear usuarios
+                </span>
+              )}
+              {p.is_master && (
+                <span className="bg-yellow-950/40 text-yellow-400 border border-yellow-900/40 px-2 py-0.5 rounded-full font-bold">
+                  Master
+                </span>
+              )}
+              <span className="text-muted">
+                {new Date(p.created_at).toLocaleDateString("es-AR")}
+              </span>
+            </div>
+          </li>
+        ))}
+        {(!perfiles || perfiles.length === 0) && (
+          <li className="lla-card text-center text-muted py-16 text-xs">
+            No hay usuarios registrados.
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

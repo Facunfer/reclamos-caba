@@ -2,6 +2,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { api } from "@/lib/rutas";
 
 interface Props {
   comunaId: number;
@@ -34,7 +36,7 @@ export default function NuevoUsuarioForm({ comunaId }: Props) {
 
     setLoading(true);
 
-    const res = await fetch("/api/usuarios/crear", {
+    const res = await fetch(api("/api/usuarios/crear"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -146,9 +148,9 @@ export default function NuevoUsuarioForm({ comunaId }: Props) {
         >
           {loading ? "Creando..." : "Crear Usuario"}
         </button>
-        <a href="/panel/usuarios" className="lla-card px-8 py-4 text-muted hover:text-white hover:border-muted transition-all text-center uppercase tracking-widest text-[10px] font-bold">
+        <Link href="/panel/usuarios" className="lla-card px-8 py-4 text-muted hover:text-white hover:border-muted transition-all text-center uppercase tracking-widest text-[10px] font-bold">
           Volver
-        </a>
+        </Link>
       </div>
     </form>
   );

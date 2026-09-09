@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { verifySessionToken, PUBLIC_SESSION_COOKIE } from "@/lib/publicSession";
 import { puedeVer, type PublicTab } from "@/lib/publicAccounts";
+import { COOKIE_PATH } from "@/lib/rutas";
 
 // Qué pestaña de /public corresponde a cada página, para chequear el rol.
 // "reclamos" (la home de /public) no está listada porque todos los roles
@@ -12,6 +13,24 @@ const TAB_POR_RUTA: { prefix: string; tab: PublicTab }[] = [
   { prefix: "/public/circuitos", tab: "circuitos" },
   { prefix: "/public/comunas", tab: "usuarios" },
 ];
+
+/**
+ * Redirect interno que respeta el `basePath`.
+ *
+ * `new URL("/login", request.url)` NO sirve con `basePath`: `request.url` de un
+ * pedido a `/reclamos/panel` es `https://host/reclamos/panel`, y resolver
+ * "/login" contra eso da `https://host/login` — la raíz del PORTAL, otra app.
+ * El usuario termina en el login del CRM sin que nada falle ruidosamente.
+ *
+ * `request.nextUrl` es un `NextURL`, que sí conoce el prefijo: se le asigna el
+ * pathname pelado y al serializar lo vuelve a poner.
+ */
+function redirigir(request: NextRequest, pathname: string) {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  url.search = "";
+  return NextResponse.redirect(url);
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -31,13 +50,13 @@ export async function middleware(request: NextRequest) {
       if (isPublicApi) {
         return NextResponse.json({ error: "No autorizado" }, { status: 401 });
       }
-      return NextResponse.redirect(new URL("/public/login", request.url));
+      return redirigir(request, "/public/login");
     }
 
     if (isPublicPage) {
       const restringida = TAB_POR_RUTA.find((r) => pathname.startsWith(r.prefix));
       if (restringida && !puedeVer(role, restringida.tab)) {
-        return NextResponse.redirect(new URL("/public", request.url));
+        return redirigir(request, "/public");
       }
     }
   }
@@ -48,6 +67,11 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Mismo `path` que los otros dos clientes (browser y server). Si el
+      // middleware refrescara el token en "/" mientras el resto escribe en
+      // "/reclamos", quedarían dos cookies homónimas y la sesión se caería de
+      // forma intermitente. Ver `COOKIE_PATH`.
+      cookieOptions: { path: COOKIE_PATH },
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -71,12 +95,12 @@ export async function middleware(request: NextRequest) {
 
   // Protect /panel routes
   if (request.nextUrl.pathname.startsWith("/panel") && !user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return redirigir(request, "/login");
   }
 
   // Redirect logged-in users away from /login
   if (request.nextUrl.pathname === "/login" && user) {
-    return NextResponse.redirect(new URL("/panel", request.url));
+    return redirigir(request, "/panel");
   }
 
   return supabaseResponse;

@@ -9,16 +9,34 @@
 //     necesidad de sesión, igual que las fotos nativas (ver docs/DEPLOY-MTR.md).
 
 import type { OrigenReclamo, ReclamoArchivo } from "@/types";
+import { api } from "@/lib/rutas";
 
-export const RUTA_PROXY_MTR = "/api/fotos-mtr";
+// Con `basePath`, esta ruta la resuelve el NAVEGADOR (va a un `src` de
+// <img> y al CSV), así que Next no la prefija sola. Ver `lib/rutas.ts`.
+export const RUTA_PROXY_MTR = api("/api/fotos-mtr");
 
-/** URL relativa al sitio. Suficiente para <img> dentro de la app. */
-export function urlDeArchivo(origen: OrigenReclamo, archivo: ReclamoArchivo): string {
+/** Buckets públicos del proyecto. Los adjuntos de sugerencias viven en otro. */
+export const BUCKET_FOTOS = "reclamos-fotos";
+export const BUCKET_DOCUMENTOS = "reclamos-documentos";
+
+/**
+ * URL relativa al sitio. Suficiente para <img> dentro de la app.
+ *
+ * `bucket` es opcional y por defecto es el de reclamos, que es el caso de casi
+ * todas las llamadas. Las sugerencias suben a `reclamos-documentos`: antes esa
+ * URL se armaba a mano en `SugerenciasTable`, que es como se llega a tener dos
+ * formas distintas de resolver lo mismo.
+ */
+export function urlDeArchivo(
+  origen: OrigenReclamo,
+  archivo: ReclamoArchivo,
+  bucket: string = BUCKET_FOTOS
+): string {
   if (origen === "mtr") {
     return `${RUTA_PROXY_MTR}/${archivo.storage_path}`;
   }
   const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
-  return `${base}/storage/v1/object/public/reclamos-fotos/${archivo.storage_path}`;
+  return `${base}/storage/v1/object/public/${bucket}/${archivo.storage_path}`;
 }
 
 /**

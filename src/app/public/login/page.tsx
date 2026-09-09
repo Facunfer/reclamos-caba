@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { api } from "@/lib/rutas";
 
 export default function PublicLoginPage() {
   const [user, setUser] = useState("");
@@ -15,7 +17,7 @@ export default function PublicLoginPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/public/login", {
+      const res = await fetch(api("/api/public/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user, password }),
@@ -72,9 +74,9 @@ export default function PublicLoginPage() {
           </button>
         </form>
         <div className="mt-8 text-center border-t border-white/10 pt-6">
-          <a href="/login" className="text-[10px] text-muted hover:text-white uppercase font-bold tracking-widest transition-colors">
+          <Link href="/login" className="text-[10px] text-muted hover:text-white uppercase font-bold tracking-widest transition-colors">
             Ir al Panel Comunal →
-          </a>
+          </Link>
         </div>
       </div>
     </div>

@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "seed:users": "tsx scripts/seed-users.ts",
-    "seed:circuitos": "tsx scripts/seed-circuitos.ts"
+    "seed:circuitos": "tsx scripts/seed-circuitos.ts",
+    "test": "npm run test:sso",
+    "test:sso": "tsx tests/sso.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

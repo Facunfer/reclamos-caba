@@ -370,8 +370,18 @@ Endpoint alternativo que agrega sobre `reclamos_publicos` aplicando los mismos f
 | `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto Supabase | Pública |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key (respeta RLS) | Pública |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role (bypassa RLS) | **Secreta — solo server** |
-| `NEXT_PUBLIC_MASTER_USER` | Usuario del gate público (default `MASTER`) | Pública |
-| `NEXT_PUBLIC_MASTER_PASS` | Contraseña del gate público (default `123456`) | Pública |
+| `MASTER_USER` | Usuario del gate público | **Secreta — solo server** |
+| `MASTER_PASS` | Contraseña del gate público | **Secreta — solo server** |
+| `PUBLIC_SESSION_SECRET` | Firma HMAC de la cookie `public_session` | **Secreta — solo server** |
+| `PUBLIC_ACCOUNTS` | Cuentas de `/public` con acceso por pestaña | **Secreta — solo server** |
+| `MTR_SUPABASE_URL` / `MTR_SUPABASE_SERVICE_KEY` | Proyecto externo "Mandame Tu Reclamo" | **Secreta — solo server** |
+| `SSO_BRIDGE_SECRET` | Puente de sesión con el Portal (§11). **Idéntico en los dos repos** | **Secreta — solo server** |
+| `NEXT_PUBLIC_PORTAL_URL` | A dónde vuelve el botón "← Portal" del panel | Pública |
+
+> Las dos primeras **cambiaron de nombre**: antes eran `NEXT_PUBLIC_MASTER_USER`
+> y `NEXT_PUBLIC_MASTER_PASS`, o sea que la contraseña del dashboard viajaba en
+> el bundle del navegador. Hoy se validan server-side (§5.2) y no llevan
+> prefijo. Si quedó alguna referencia a las viejas en otro documento, es vieja.
 
 ### 8.2 Pasos de instalación
 
@@ -406,6 +416,13 @@ Scripts disponibles: `dev`, `build`, `start`, `seed:users`.
 
 ## 9. Mapa de rutas
 
+> **Todas las rutas de esta tabla llevan el prefijo `/reclamos`** desde que la
+> app se sirve adentro del Portal (§11): la de `/panel` es en realidad
+> `/reclamos/panel`. Se listan sin el prefijo porque es lo que ve el código —
+> `basePath` lo agrega Next, y el `matcher` del middleware también se evalúa sin
+> él.
+
+
 | Ruta | Tipo | Acceso | Función |
 |---|---|---|---|
 | `/` | Redirect | — | → `/public` |
@@ -427,17 +444,125 @@ Scripts disponibles: `dev`, `build`, `start`, `seed:users`.
 | `/api/circuitos` | API GET | — | FeatureCollection de circuitos (RPC, cache 24h) |
 | `/api/reclamos/stats` | API GET | — | Agregados barras/línea sobre vista pública |
 | `/api/usuarios/crear` | API POST | `can_create_users` | Alta de usuario (Admin API) |
+| `/api/sso/exchange` | API GET | Token firmado | Canje del pase del Portal por una sesión (§11) |
+| `/api/public/login` / `/api/public/logout` | API POST | — | Gate del dashboard público (§5.2) |
 
 ---
 
 ## 10. Riesgos conocidos y mejoras sugeridas
 
-1. **Gate público inseguro** (§5.2): credenciales en `NEXT_PUBLIC_*` y validación client-side. *Mejora:* mover a auth server-side o a un middleware que valide un token real.
-2. **Sin cambio de estado en la UI del panel**: la tabla de reclamos muestra los datos pero el flujo de transición de estado (`nuevo → en_proceso → resuelto`) no tiene control visible en `ReclamosTable`. Las RLS de `UPDATE` ya lo permiten; falta exponerlo en la interfaz.
+1. ~~**Gate público inseguro**: credenciales en `NEXT_PUBLIC_*` y validación client-side.~~ **Resuelto**: hoy la contraseña se valida server-side, la sesión es una cookie httpOnly firmada con HMAC y el corte lo hace el middleware (§5.2). Queda el problema de fondo, que es otro: **sigue siendo una contraseña compartida, sin usuarios individuales ni registro de accesos**.
+2. ~~**Sin cambio de estado en la UI del panel**~~ **Resuelto**: tocar un reclamo abre su ficha (`components/ui/FichaDetalle.tsx`) y ahí está el control de estado. Lo mismo para sugerencias, con su propio vocabulario. Las etiquetas y colores de los dos vocabularios viven en `lib/estados.ts`, en un solo lugar.
+
+   Nota sobre los datos existentes: los 177 reclamos cargados hasta ahora están todos en `nuevo`, no porque nadie los haya atendido sino porque no había dónde decirlo. Ese histórico no se puede reconstruir.
 3. **Caché de geocodificación efímera**: por instancia y no persistente. *Mejora:* persistir normalizaciones en una tabla para reusarlas entre sesiones.
 4. **Acoplamiento `reclamo_archivos`**: una sola tabla para dos entidades con PKs de distinto tipo complica las queries. *Mejora:* evaluar tablas separadas o una columna discriminadora más explícita.
 5. **Buckets públicos**: cualquiera con la URL puede ver una foto. Aceptable si no hay datos personales en imágenes; de lo contrario, usar URLs firmadas.
-6. **Contraseñas por defecto `123456`**: rotar antes de producción.
+6. **Contraseñas por defecto `123456`**: las 15 cuentas comunales siguen con esa contraseña, y la pantalla de login la muestra escrita como texto de ayuda (`src/app/login/page.tsx`). Es lo más urgente de esta lista. El puente con el Portal (§11) reduce cuánta gente necesita esas contraseñas, pero no las rota: eso hay que hacerlo aparte.
+
+7. **El uso único del pase de SSO vive en memoria** (`lib/sso.ts`). Alcanza porque PM2 corre esta app en modo *fork* (un proceso). Si algún día se pasa a *cluster*, deja de garantizarse y hay que moverlo a la tabla `sso_accesos`, que ya tiene el `jti` con índice único justamente para eso.
+
+---
+
+---
+
+## 11. Integración con el Portal Territorial
+
+Reclamos CABA dejó de ser un sitio aparte al que el Portal linkeaba: hoy se
+sirve **desde el mismo origen**, bajo `/reclamos`, y el referente entra sin
+volver a loguearse. Son tres piezas independientes.
+
+### 11.1 Mismo origen (`basePath` + nginx)
+
+`next.config.ts` declara `basePath: "/reclamos"`, y nginx tiene un
+`location /reclamos/` en el vhost del Portal que hace `proxy_pass` a este
+proceso (`deploy/nginx-reclamos-en-portal.conf`, en el repo `portal-crm`). Cada
+app sigue siendo su propio proceso Next y su propio proyecto de Supabase; lo
+único que se comparte es el origen.
+
+**Por qué importa el origen y no es cosmético.** El Portal es una PWA instalable
+con `scope: "/"`. Con Reclamos en otro dominio, tocar el botón desde la app
+instalada en un iPhone **abría Safari por fuera de la ventana** y el referente
+perdía el modo standalone sin entender por qué. Con el mismo origen, es una
+sección más.
+
+**Lo que `basePath` NO prefija.** Next prefija `next/link`, `router.push`,
+`redirect()` y los assets de `/_next`. No toca ningún string que se le entregue
+al navegador: `fetch("/api/...")`, `<a href="/panel">`, `window.location`. Esos
+pasan por los helpers de `src/lib/rutas.ts`. Ninguno de los tres falla de forma
+ruidosa si se olvida —el `fetch` recibe el HTML del Portal, el `<a>` deposita al
+usuario en otra aplicación—, así que el prefijo vive en un solo lugar.
+
+**Cookies.** Todas las de esta app (`sb-*` de Supabase Auth y `public_session`)
+se escriben con `Path=/reclamos` (`COOKIE_PATH` en `lib/rutas.ts`). Compartir
+origen con el Portal significa que una cookie en `Path=/` viajaría en cada
+request del CRM, y que dos apps que eligieran el mismo *nombre* se pisarían la
+sesión sin que nadie se entere.
+
+**El dominio propio sigue vivo.** `mapa.alianzalalibertadavanzacaba.com` también
+sirve la app bajo `/reclamos`, y las URLs viejas (`/login`, `/panel`, `/public`)
+redirigen con 301 al prefijo. Es la puerta de entrada de quien no usa el Portal y
+el plan de rollback si el puente falla.
+
+> `reclamos.alianzalalibertadavanzacaba.com` **no existe**: nunca se creó el
+> registro DNS. Si alguna versión de esta documentación lo menciona como el
+> dominio del sistema, está equivocada.
+
+### 11.2 Puente de sesión (SSO)
+
+El botón del Portal apunta a `/api/reclamos/sso` (del Portal), que:
+
+1. lee la sesión del referente,
+2. verifica que sea de ámbito COMUNA y tenga comuna 1..15,
+3. firma con HMAC-SHA256 un pase de **60 segundos y un solo uso**
+   (`{v, uid, usuario, comuna, jti, iat, exp}`),
+4. redirige a `/reclamos/api/sso/exchange?token=…`, mismo origen.
+
+De este lado, `src/app/api/sso/exchange/route.ts` verifica la firma y el `exp`,
+**consume** el `jti`, resuelve o crea la cuenta, emite la sesión con
+`generateLink` + `verifyOtp` (la misma sesión que un login con contraseña) y
+redirige a `/reclamos/panel`.
+
+El secreto (`SSO_BRIDGE_SECRET`) es propio de este puente, server-only, y tiene
+que ser idéntico en los dos repos. La Service Role Key de Reclamos nunca sale de
+este servidor.
+
+**Falla cerrado.** Token vencido, reusado, mal firmado, de otra versión o con una
+comuna fuera de rango: redirect al login normal con un motivo genérico
+(`?sso=expirado` o `?sso=invalido`). El motivo real va al log del servidor —
+distinguir los siete casos en pantalla solo le sirve a quien esté probando
+tokens. `tests/sso.test.ts` cubre cada uno de esos rechazos.
+
+### 11.3 Cuentas individuales, y qué cambia
+
+Se decidió **no** reusar las cuentas comunales compartidas. Cada usuario del
+Portal tiene la suya en este proyecto, con email `u<id>@portal.reclamos.gob.ar`
+—anclado al `usuarios.id` del Portal, que es estable, y no al username, que se
+puede cambiar—. El alta es automática y ocurre en el primer canje.
+
+Lo que se gana: `reclamos.creado_por_user_id` deja de apuntar siempre a `cN` y
+cada reclamo nuevo queda atribuido a una persona. Y dar de baja a alguien pasa a
+ser posible sin cambiarle la contraseña a una comuna entera.
+
+Estas cuentas se crean con `can_create_users = false`: las altas se gestionan del
+lado del Portal, que es donde vive el modelo de permisos. Dos lugares para dar de
+alta gente serían dos lugares donde revisar quién tiene acceso.
+
+**Registro de accesos.** Cada canje se guarda en `sso_accesos` (migración
+`supabase/011_sso_accesos.sql`): quién, cuándo, a qué comuna y con qué cuenta. Es
+el primer registro de accesos que tiene este sistema — el panel comunal y el
+dashboard público no tienen ninguno. Si la inserción falla, la sesión se abre
+igual y el error queda en el log: bloquear el acceso de las 15 comunas porque no
+se pudo escribir una fila de auditoría sería peor que la falta del registro.
+
+**Quiénes entran.** Los 66 usuarios de ámbito COMUNA del Portal, incluidos los 12
+de rol EXTRACTO. Es una decisión tomada explícitamente y vale decirla en voz
+alta: en el Portal un EXTRACTO ve **solo lo que tiene asignado**, y acá va a ver
+**toda su comuna**, porque la RLS de Reclamos filtra por comuna y no conoce el
+concepto de asignación. Hasta ahora eso estaba frenado de hecho porque hacía
+falta la contraseña `cN`; el puente se la ahorra. Revertirlo es agregar
+`getRol(user) !== "EXTRACTO"` en `app/api/reclamos/sso/route.ts` y en el
+`esComuna` del sidebar del Portal.
 
 ---
 

@@ -33,14 +33,19 @@ export default function PanelFilters({ current, tipos }: Props) {
         <div className="flex flex-col gap-4 mb-6 lla-card p-4">
             <div className="flex flex-wrap items-center gap-4">
                 {/* Urgencia Filters */}
-                <div className="flex items-center gap-2">
+                <div className="flex w-full items-center gap-2 md:w-auto">
                     <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Urgencia:</span>
                     <div className="flex gap-1.5">
                         {urgencias.map((u) => (
                             <button
                                 key={u}
                                 onClick={() => updateUrl("urgencia", u)}
-                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition ${current.urgencia === u
+                                // 44px en teléfono, el chip chico de siempre en
+                                // escritorio. Los chips medían 24px de alto: es
+                                // menos de la mitad del mínimo táctil cómodo, y
+                                // están pegados de a tres, así que fallarlos
+                                // aplicaba el filtro de al lado.
+                                className={`flex min-h-11 items-center rounded px-4 text-[10px] font-bold uppercase tracking-wider border transition md:min-h-0 md:px-3 md:py-1 ${current.urgencia === u
                                     ? urgenciaActive(u)
                                     : "bg-black/20 text-muted border-white/10 hover:border-primary/50"
                                     }`}
@@ -52,10 +57,10 @@ export default function PanelFilters({ current, tipos }: Props) {
                 </div>
 
                 {/* Tipo Filter */}
-                <div className="flex items-center gap-2">
+                <div className="flex w-full items-center gap-2 md:w-auto">
                     <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Tipo:</span>
                     <select
-                        className="lla-input py-1 px-3 text-[10px] font-bold uppercase tracking-wider min-w-[150px] cursor-pointer"
+                        className="lla-input min-h-11 px-3 text-[10px] font-bold uppercase tracking-wider min-w-0 flex-1 cursor-pointer md:flex-none md:min-w-[150px] md:min-h-0 md:py-1"
                         value={current.tipo || ""}
                         onChange={(e) => updateUrl("tipo", e.target.value || null)}
                     >
@@ -67,19 +72,21 @@ export default function PanelFilters({ current, tipos }: Props) {
                 </div>
 
                 {/* Date Filter */}
-                <div className="flex items-center gap-2 ml-auto">
+                {/* `ml-auto` solo en escritorio: en teléfono los bloques se apilan y
+                    empujar el último a la derecha deja un hueco raro en el medio. */}
+                <div className="flex w-full items-center gap-2 md:w-auto md:ml-auto">
                     <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Fecha:</span>
-                    <div className="flex items-center gap-1">
+                    <div className="flex min-w-0 flex-1 items-center gap-1 md:flex-none">
                         <input
                             type="date"
-                            className="lla-input py-1 px-2 text-[10px] font-bold w-32 cursor-pointer"
+                            className="lla-input min-h-11 w-full min-w-0 px-2 text-[10px] font-bold cursor-pointer md:min-h-0 md:w-32 md:py-1"
                             value={current.desde || ""}
                             onChange={(e) => updateUrl("desde", e.target.value || null)}
                         />
                         <span className="text-muted text-[10px]">→</span>
                         <input
                             type="date"
-                            className="lla-input py-1 px-2 text-[10px] font-bold w-32 cursor-pointer"
+                            className="lla-input min-h-11 w-full min-w-0 px-2 text-[10px] font-bold cursor-pointer md:min-h-0 md:w-32 md:py-1"
                             value={current.hasta || ""}
                             onChange={(e) => updateUrl("hasta", e.target.value || null)}
                         />

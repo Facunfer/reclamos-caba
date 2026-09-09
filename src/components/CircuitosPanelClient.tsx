@@ -3,8 +3,31 @@
 import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
+import { api } from "@/lib/rutas";
+import { usarEscritorio } from "@/lib/usarEscritorio";
 import type { CircuitoFeatureProps, ProblemaCircuito, TipoReclamo, Urgencia } from "@/types";
 
+/**
+ * Leaflet no se renderiza en el servidor (usa `window`), de ahí el
+ * `ssr: false`. Pero eso solo evita el render: el chunk se descarga apenas el
+ * componente se monta, y son ~150 kB más los 167 polígonos del GeoJSON de
+ * circuitos.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * Por qué acá NO se aplica la regla de "no montar en el teléfono"
+ * ─────────────────────────────────────────────────────────────────────────
+ * En el Portal, AG Grid no se monta abajo de 768px y punto: hay tarjetas que
+ * hacen lo mismo, así que el teléfono no pierde nada.
+ *
+ * Acá no hay equivalente. El circuito se elige **haciendo clic en el mapa**, y
+ * el punto del problema también: sin mapa la pantalla no tiene ninguna función.
+ * Bloquearlo no la haría liviana, la haría inútil.
+ *
+ * La solución intermedia: en el teléfono el mapa no se baja solo, pero está a
+ * un toque. Cero kB para quien entró de paso, y la decisión de gastar los datos
+ * la toma quien va a usarlo — que es justamente quien está parado en el
+ * circuito.
+ */
 const MapaCircuitos = dynamic(() => import("@/components/map/MapaCircuitos"), { ssr: false });
 
 const URGENCIAS: Urgencia[] = ["BAJA", "MEDIA", "ALTA"];
@@ -22,6 +45,13 @@ interface Props {
 }
 
 export default function CircuitosPanelClient({ comunaId, userId, tipos }: Props) {
+  const esEscritorio = usarEscritorio();
+  // En escritorio el mapa se monta siempre, como hasta ahora. En el teléfono
+  // espera un toque. `usarEscritorio()` arranca en `false`, así que el caso por
+  // defecto —y el del servidor— es el que NO descarga nada.
+  const [mapaPedido, setMapaPedido] = useState(false);
+  const mostrarMapa = esEscritorio || mapaPedido;
+
   const [geojson, setGeojson] = useState<any | null>(null);
   const [selected, setSelected] = useState<CircuitoFeatureProps | null>(null);
   const [problemas, setProblemas] = useState<ProblemaCircuito[]>([]);
@@ -41,7 +71,7 @@ export default function CircuitosPanelClient({ comunaId, userId, tipos }: Props)
 
   // Cargar polígonos de la comuna del usuario
   useEffect(() => {
-    fetch(`/api/circuitos?comuna_id=${comunaId}`)
+    fetch(api(`/api/circuitos?comuna_id=${comunaId}`))
       .then((r) => r.json())
       .then(setGeojson)
       .catch((e) => console.error("[circuitos] error cargando geojson:", e));
@@ -108,17 +138,36 @@ export default function CircuitosPanelClient({ comunaId, userId, tipos }: Props)
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Mapa */}
-      <div className="lg:col-span-2 relative border border-card-border rounded-lg overflow-hidden h-[600px]">
-        <MapaCircuitos
-          geojson={geojson}
-          selectedId={selected?.id ?? null}
-          onSelectCircuito={handleSelect}
-          problemas={problemas.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, urgencia: p.urgencia, tipo: p.tipo }))}
-          pickMode={pickMode}
-          pickedPoint={pickedPoint}
-          onPickPoint={(lat, lng) => { setPickedPoint([lat, lng]); setPickMode(false); }}
-        />
-        {pickMode && (
+      <div className="lg:col-span-2 relative border border-card-border rounded-lg overflow-hidden h-[65vh] min-h-[380px] lg:h-[600px]">
+        {mostrarMapa ? (
+          <MapaCircuitos
+            geojson={geojson}
+            selectedId={selected?.id ?? null}
+            onSelectCircuito={handleSelect}
+            problemas={problemas.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, urgencia: p.urgencia, tipo: p.tipo }))}
+            pickMode={pickMode}
+            pickedPoint={pickedPoint}
+            onPickPoint={(lat, lng) => { setPickedPoint([lat, lng]); setPickMode(false); }}
+          />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+            <p className="text-xs uppercase tracking-widest font-bold text-muted">
+              Mapa de circuitos
+            </p>
+            <p className="max-w-xs text-xs leading-relaxed text-muted/70">
+              Son unos 150 kB más los polígonos de los 167 circuitos. No se
+              descarga solo en el teléfono.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMapaPedido(true)}
+              className="lla-btn-primary flex min-h-11 items-center px-6 text-[11px] uppercase tracking-widest"
+            >
+              Cargar mapa
+            </button>
+          </div>
+        )}
+        {mostrarMapa && pickMode && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-black/80 border border-indigo-500/60 text-indigo-300 text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-full shadow-xl pointer-events-none">
             Hacé clic dentro del circuito para ubicar el problema
           </div>
@@ -126,7 +175,13 @@ export default function CircuitosPanelClient({ comunaId, userId, tipos }: Props)
       </div>
 
       {/* Panel lateral */}
-      <div className="lla-card p-5 h-[600px] overflow-y-auto">
+      {/*
+        En escritorio el panel tiene alto fijo y scroll propio, al lado del
+        mapa. En el teléfono va debajo y crece con su contenido: un `h-[600px]`
+        con scroll interno adentro de una página que ya scrollea son dos
+        scrolls anidados, y el dedo nunca sabe cuál está moviendo.
+      */}
+      <div className="lla-card p-5 lg:h-[600px] lg:overflow-y-auto">
         {!selected ? (
           <div className="text-center text-muted py-16 text-xs uppercase tracking-widest font-bold">
             Seleccioná un circuito en el mapa para ver y cargar problemas.
@@ -163,7 +218,10 @@ export default function CircuitosPanelClient({ comunaId, userId, tipos }: Props)
                       key={u}
                       type="button"
                       onClick={() => setForm((p) => ({ ...p, urgencia: u }))}
-                      className={`flex-1 py-2 rounded-lg text-[10px] font-black tracking-tighter transition-all ${
+                                            // 44px en teléfono; en escritorio queda el chip chico
+                      // de siempre, que convive con un panel angosto al lado
+                      // del mapa.
+                      className={`flex min-h-11 flex-1 items-center justify-center rounded-lg text-[10px] font-black tracking-tighter transition-all md:min-h-0 md:py-2 ${
                         form.urgencia === u ? urgenciaStyle(u) : "bg-black border border-card-border text-muted hover:border-muted/50"
                       }`}
                     >

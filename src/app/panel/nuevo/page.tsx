@@ -1,6 +1,7 @@
 // src/app/panel/nuevo/page.tsx
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import NuevoReclamoForm from "@/components/ui/NuevoReclamoForm";
 import type { TipoReclamo } from "@/types";
 
@@ -28,7 +29,7 @@ export default async function NuevoReclamoPage() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-6">
-        <a href="/panel" className="text-indigo-600 text-sm hover:underline">← Volver al panel</a>
+        <Link href="/panel" className="text-indigo-600 text-sm hover:underline">← Volver al panel</Link>
         <h1 className="text-2xl font-bold mt-2 text-gray-800">Nuevo Reclamo</h1>
         <p className="text-gray-500 text-sm">
           Ingresando para Comuna {String(perfil.comuna_id).padStart(2, "0")}

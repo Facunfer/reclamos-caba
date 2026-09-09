@@ -5,6 +5,7 @@ import {
   PUBLIC_SESSION_MAX_AGE_SECONDS,
 } from "@/lib/publicSession";
 import { getPublicAccounts } from "@/lib/publicAccounts";
+import { COOKIE_PATH } from "@/lib/rutas";
 import { getClientKey, isRateLimited, registerFailedAttempt, clearAttempts } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: "/",
+    path: COOKIE_PATH,
     maxAge: PUBLIC_SESSION_MAX_AGE_SECONDS,
   });
   return res;

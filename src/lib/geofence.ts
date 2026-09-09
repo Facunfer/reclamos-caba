@@ -1,4 +1,5 @@
 // src/lib/geofence.ts
+import { api } from "@/lib/rutas";
 
 export interface Point {
     lat: number;
@@ -44,8 +45,8 @@ export function isPointInMultiPolygon(point: Point, multiPolygon: number[][][][]
 let comunasGeoJSON: any = null;
 let barriosGeoJSON: any = null;
 
-const COMUNAS_URL = "/api/comunas";
-const BARRIOS_URL = "/api/barrios";
+const COMUNAS_URL = api("/api/comunas");
+const BARRIOS_URL = api("/api/barrios");
 
 export async function fetchComunasGeoJSON() {
     if (comunasGeoJSON) return comunasGeoJSON;

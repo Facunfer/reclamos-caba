@@ -1,5 +1,6 @@
 // src/app/panel/sugerencias/page.tsx
 import { createClient } from "@/lib/supabase/server";
+import { ruta } from "@/lib/rutas";
 import { redirect } from "next/navigation";
 import PanelSugerenciasFilters from "@/components/ui/PanelSugerenciasFilters";
 import SugerenciasTable from "@/components/ui/SugerenciasTable";
@@ -91,15 +92,18 @@ function Pagination({
     function pageUrl(p: number) {
         const q = new URLSearchParams(params as Record<string, string>);
         q.set("page", String(p));
-        return `/panel/sugerencias?${q.toString()}`;
+        return ruta(`/panel/sugerencias?${q.toString()}`);
     }
     return (
-        <div className="flex gap-1 justify-center mt-6">
+        <div className="flex flex-wrap gap-1 justify-center mt-6">
             {Array.from({ length: total }, (_, i) => i + 1).map((p) => (
                 <a
                     key={p}
                     href={pageUrl(p)}
-                    className={`w-8 h-8 flex items-center justify-center rounded text-sm ${p === current
+                    // 44px en teléfono. La paginación son botones chicos y pegados:
+          // fallar uno manda a otra página del listado, y volver cuesta otro
+          // viaje al servidor.
+          className={`flex h-11 w-11 items-center justify-center rounded text-sm md:h-8 md:w-8 ${p === current
                         ? "bg-primary text-white"
                         : "bg-black/40 border border-white/5 text-muted hover:border-primary/50"
                         }`}

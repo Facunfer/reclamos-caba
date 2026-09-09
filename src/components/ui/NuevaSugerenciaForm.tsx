@@ -2,7 +2,9 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { api } from "@/lib/rutas";
 import type { TipoSugerencia, Urgencia } from "@/types";
 
 interface Props {
@@ -12,6 +14,32 @@ interface Props {
 }
 
 const URGENCIAS: Urgencia[] = ["BAJA", "MEDIA", "ALTA"];
+
+
+/**
+ * Mismo problema y misma solución que en `NuevoReclamoForm` — ver el comentario
+ * largo de allá: con el teclado táctil abierto, el dropdown de direcciones
+ * queda tapado y `scrollIntoView` no lo detecta porque mide contra el viewport
+ * de layout, que no se achica.
+ *
+ * Está duplicado y no extraído a un módulo compartido porque son dos
+ * formularios que ya comparten media docena de patrones copiados entre sí
+ * (debounce, AbortController, previews de adjuntos). Extraer solo este trozo
+ * daría una abstracción a medias; unificar los dos formularios es un trabajo
+ * aparte y más grande que esta tanda.
+ */
+function useDropdownVisible(ref: React.RefObject<HTMLDivElement | null>, visible: boolean) {
+    useEffect(() => {
+        if (!visible) return;
+        const el = ref.current;
+        if (!el) return;
+        // Medición sincrónica y `scrollBy` sin `smooth`: los dos tienen su
+        // porqué en el comentario del mismo hook en NuevoReclamoForm.
+        const altoVisible = window.visualViewport?.height ?? window.innerHeight;
+        const sobra = el.getBoundingClientRect().bottom - (altoVisible - 12);
+        if (sobra > 0) window.scrollBy(0, sobra);
+    }, [ref, visible]);
+}
 
 export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) {
     const router = useRouter();
@@ -81,6 +109,9 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
 
     const fetchController = useRef<AbortController | null>(null);
 
+    const dropdownRef = useRef<HTMLDivElement | null>(null);
+    useDropdownVisible(dropdownRef, showSuggestions && suggestions.length > 0);
+
     useEffect(() => {
         if (debouncedDireccion.length > 3 && !skipNextFetch.current) {
             fetchSuggestions(debouncedDireccion);
@@ -99,7 +130,7 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
         fetchController.current = new AbortController();
 
         try {
-            const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}&suggestions=true`, {
+            const res = await fetch(api(`/api/geocode?q=${encodeURIComponent(q)}&suggestions=true`), {
                 signal: fetchController.current.signal
             });
             const data = await res.json();
@@ -133,7 +164,7 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
     async function geocodeAddress(address: string) {
         setGeoStatus("loading");
         try {
-            const res = await fetch(`/api/geocode?q=${encodeURIComponent(address)}`);
+            const res = await fetch(api(`/api/geocode?q=${encodeURIComponent(address)}`));
             if (!res.ok) throw new Error("API fail");
             const data = await res.json();
             if (data.lat && data.lng) {
@@ -252,7 +283,8 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
                                 key={u}
                                 type="button"
                                 onClick={() => set("urgencia", u)}
-                                className={`flex-1 py-3 rounded-lg text-xs font-black tracking-tighter transition-all transform active:scale-95 ${form.urgencia === u
+                                                                // Ver el mismo botón en NuevoReclamoForm: 44px mínimo.
+                                className={`flex min-h-11 flex-1 items-center justify-center rounded-lg text-xs font-black tracking-tighter transition-all transform active:scale-95 ${form.urgencia === u
                                     ? urgenciaStyle(u)
                                     : "bg-black border border-card-border text-muted hover:border-muted/50"
                                     }`}
@@ -296,13 +328,16 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
                 </div>
 
                 {showSuggestions && suggestions.length > 0 && (
-                    <div className="absolute z-50 left-0 right-0 mt-1 bg-black border border-card-border rounded-lg shadow-2xl max-h-60 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div
+                        ref={dropdownRef}
+                        className="absolute z-50 left-0 right-0 mt-1 bg-black border border-card-border rounded-lg shadow-2xl max-h-60 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                    >
                         {suggestions.map((s, i) => (
                             <button
                                 key={i}
                                 type="button"
                                 onClick={() => handleSelectSuggestion(s)}
-                                className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-wider text-muted hover:text-white hover:bg-primary/20 border-b border-white/5 last:border-none transition-colors"
+                                className="flex min-h-11 w-full items-center text-left px-4 py-3 text-xs font-bold uppercase tracking-wider text-muted hover:text-white hover:bg-primary/20 border-b border-white/5 last:border-none transition-colors"
                             >
                                 {s.direccion}
                             </button>
@@ -319,21 +354,30 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
                 <label className="block text-xs font-bold text-muted uppercase tracking-widest ml-1">Documentos o Fotos (Máximo 5)</label>
                 <div className="flex flex-wrap gap-4">
                     {previews.map((preview, i) => (
-                        <div key={i} className="relative w-24 h-24 border border-card-border rounded-lg overflow-hidden group bg-black/40 flex flex-col items-center justify-center p-2">
-                            {preview.url ? (
-                                <img src={preview.url} alt="preview" className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="text-center">
-                                    <div className="text-2xl">📄</div>
-                                    <div className="text-[8px] text-muted truncate w-20 px-1">{preview.name}</div>
-                                </div>
-                            )}
+                        <div key={i} className="relative w-24 h-24">
+                            <div className="flex h-full w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-card-border bg-black/40 p-2">
+                                {preview.url ? (
+                                    <img src={preview.url} alt="preview" className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="text-center">
+                                        <div className="text-2xl">📄</div>
+                                        <div className="text-[8px] text-muted truncate w-20 px-1">{preview.name}</div>
+                                    </div>
+                                )}
+                            </div>
+                            {/* Ver el comentario largo del mismo botón en
+                                NuevoReclamoForm: el overlay con `group-hover`
+                                borraba adjuntos de un tap en el teléfono. */}
                             <button
                                 type="button"
                                 onClick={() => removeFile(i)}
-                                className="absolute inset-0 bg-red-600/80 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center font-bold text-xs"
+                                aria-label="Quitar este adjunto"
+                                title="Quitar"
+                                className="absolute -right-2 -top-2 z-10 flex h-11 w-11 items-center justify-center"
                             >
-                                Eliminar
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-black bg-red-600 text-xs font-bold text-white shadow-lg">
+                                    ✕
+                                </span>
                             </button>
                         </div>
                     ))}
@@ -392,12 +436,12 @@ export default function NuevaSugerenciaForm({ comunaId, userId, tipos }: Props) 
                 >
                     {loading ? "Procesando..." : "Ingresar Sugerencia"}
                 </button>
-                <a
+                <Link
                     href="/panel"
                     className="lla-card px-8 py-4 text-muted hover:text-white hover:border-muted transition-all text-center uppercase tracking-widest text-[10px] font-bold"
                 >
                     Volver
-                </a>
+                </Link>
             </div>
         </form>
     );

@@ -1,11 +1,48 @@
 // src/app/login/page.tsx
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
+/**
+ * Motivos por los que alguien puede aterrizar acá viniendo del botón del Portal
+ * en vez de haber escrito la URL.
+ *
+ * Son dos y no siete a propósito: del otro lado el canje distingue firma
+ * inválida, versión distinta, payload roto, token reusado… y todo eso se
+ * colapsa acá en "inválido". Contarle a quien está probando tokens en cuál de
+ * los siete chequeos falló es ayudarlo. El motivo real queda en el log del
+ * servidor.
+ */
+const MENSAJE_SSO: Record<string, string> = {
+  expirado:
+    "El acceso desde el Portal tardó demasiado y venció. Volvé al Portal y tocá el botón de nuevo, o entrá acá con tu usuario de comuna.",
+  invalido:
+    "No se pudo abrir la sesión desde el Portal. Entrá con tu usuario de comuna o avisale al administrador.",
+};
+
+/**
+ * `useSearchParams` obliga a un límite de Suspense: sin él, Next no puede
+ * prerenderizar esta página —que hoy es estática— y el build falla con
+ * "useSearchParams() should be wrapped in a suspense boundary".
+ *
+ * El `fallback` es `null` y no un esqueleto porque lo que está adentro es el
+ * formulario entero, que se hidrata de inmediato: un esqueleto se vería un
+ * frame y sería un parpadeo, no información.
+ */
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const avisoSSO = MENSAJE_SSO[params.get("sso") ?? ""] ?? null;
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -67,6 +104,18 @@ export default function LoginPage() {
             <p className="text-[10px] text-muted mt-2 ml-1 italic">Contraseña: 123456</p>
           </div>
 
+          {/*
+            Aviso del puente. Va en ámbar y no en rojo: no es un error de quien
+            está mirando la pantalla —no se equivocó de contraseña, ni siquiera
+            tipeó nada— y el camino de salida (entrar con el usuario de comuna)
+            está justo arriba.
+          */}
+          {avisoSSO && !error && (
+            <p className="text-amber-300 text-xs bg-amber-950/30 border border-amber-900/50 rounded-lg px-4 py-3 leading-relaxed">
+              {avisoSSO}
+            </p>
+          )}
+
           {error && (
             <p className="text-red-400 text-xs bg-red-950/30 border border-red-900/50 rounded-lg px-4 py-3">
               {error}
@@ -83,7 +132,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center mt-8 text-xs text-muted">
-          <a href="/public" className="hover:text-primary transition-colors">← Volver al mapa público</a>
+          <Link href="/public" className="hover:text-primary transition-colors">← Volver al mapa público</Link>
         </p>
       </div>
     </div>
