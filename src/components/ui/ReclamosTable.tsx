@@ -115,10 +115,20 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
                           // Sin esto, abrir un adjunto abre TAMBIÉN la ficha
                           // detrás: el click sube hasta el <tr>.
                           onClick={(e) => e.stopPropagation()}
-                          className="w-5 h-5 flex items-center justify-center bg-indigo-900/50 text-indigo-400 rounded hover:bg-indigo-700 hover:text-white transition-colors border border-indigo-700/50"
-                          title="Ver archivo"
+                          className="w-10 h-10 flex items-center justify-center overflow-hidden bg-indigo-900/50 text-indigo-400 rounded hover:ring-2 hover:ring-primary transition-all border border-indigo-700/50"
+                          title={file.tipo === "foto" ? "Ver foto" : "Ver documento"}
                         >
-                          {file.tipo === "foto" ? "🖼️" : "📄"}
+                          {file.tipo === "foto" ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={urlDeArchivo("mapa", file)}
+                              alt="Foto del reclamo"
+                              loading="lazy"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            "📄"
+                          )}
                         </a>
                       ))}
                     </div>
@@ -175,9 +185,6 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
                   <span className="text-muted">
                     {new Date(r.created_at).toLocaleDateString("es-AR")}
                   </span>
-                  {r.reclamo_archivos && r.reclamo_archivos.length > 0 ? (
-                    <span className="text-muted">· {r.reclamo_archivos.length} adj.</span>
-                  ) : null}
                   {/*
                     "Sin geo" es la única bandera de error que se muestra en la
                     lista: significa que el reclamo NO va a aparecer en el mapa
@@ -188,6 +195,33 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
                     <span className="text-red-400">· sin geo</span>
                   ) : null}
                 </div>
+
+                {/* Miniaturas: se ven las fotos sin abrir la ficha. */}
+                {(() => {
+                  const fotos = (r.reclamo_archivos ?? []).filter((f) => f.tipo === "foto");
+                  const otros = (r.reclamo_archivos?.length ?? 0) - fotos.length;
+                  if (!fotos.length && !otros) return null;
+                  return (
+                    <div className="mt-3 flex items-center gap-2">
+                      {fotos.slice(0, 4).map((f) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={f.id}
+                          src={urlDeArchivo("mapa", f)}
+                          alt="Foto del reclamo"
+                          loading="lazy"
+                          className="w-14 h-14 rounded-lg object-cover border border-card-border"
+                        />
+                      ))}
+                      {fotos.length > 4 ? (
+                        <span className="text-[10px] text-muted">+{fotos.length - 4}</span>
+                      ) : null}
+                      {otros > 0 ? (
+                        <span className="text-[10px] text-muted">· {otros} doc.</span>
+                      ) : null}
+                    </div>
+                  );
+                })()}
               </button>
             </li>
           );

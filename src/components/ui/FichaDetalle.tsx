@@ -333,10 +333,20 @@ export default function FichaDetalle({ registro: reclamo, variante, onCerrar }: 
                     // Cuadrado de ~1/3 del ancho: en 375px son ~110px de lado,
                     // muy por encima de los 44px mínimos y suficiente para
                     // reconocer la foto sin abrirla.
-                    className="flex aspect-square items-center justify-center rounded-lg border border-card-border bg-black/60 text-2xl transition-colors hover:border-primary"
+                    className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-card-border bg-black/60 text-2xl transition-colors hover:border-primary"
                     title={f.tipo === "foto" ? "Ver foto" : "Ver documento"}
                   >
-                    {f.tipo === "foto" ? "🖼️" : "📄"}
+                    {f.tipo === "foto" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={urlDeArchivo("mapa", f, cfg.bucket)}
+                        alt="Foto adjunta"
+                        loading="lazy"
+                        className="h-full w-full rounded-lg object-cover"
+                      />
+                    ) : (
+                      "📄"
+                    )}
                   </a>
                 ))}
               </div>
