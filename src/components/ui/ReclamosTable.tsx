@@ -60,10 +60,20 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
                         href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/reclamos-fotos/${file.storage_path}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="w-5 h-5 flex items-center justify-center bg-indigo-900/50 text-indigo-400 rounded hover:bg-indigo-700 hover:text-white transition-colors border border-indigo-700/50"
-                        title="Ver archivo"
+                        className="w-10 h-10 flex items-center justify-center overflow-hidden bg-indigo-900/50 text-indigo-400 rounded hover:ring-2 hover:ring-primary transition-all border border-indigo-700/50"
+                        title={file.tipo === 'foto' ? 'Ver foto' : 'Ver documento'}
                       >
-                         {file.tipo === 'foto' ? '🖼️' : '📄'}
+                        {file.tipo === 'foto' ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/reclamos-fotos/${file.storage_path}`}
+                            alt="Foto del reclamo"
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          '📄'
+                        )}
                       </a>
                     ))}
                   </div>
