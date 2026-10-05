@@ -1,5 +1,9 @@
 // src/components/ui/ReclamosTable.tsx
 "use client";
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import type { Reclamo } from "@/types";
 
 const URGENCIA_COLORS: Record<string, string> = {
@@ -9,6 +13,22 @@ const URGENCIA_COLORS: Record<string, string> = {
 };
 
 export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
+  const router = useRouter();
+  const [borrando, setBorrando] = useState<string | null>(null);
+
+  async function eliminar(r: Reclamo) {
+    if (!window.confirm(`¿Eliminar el reclamo de ${r.direccion_normalizada ?? r.direccion_raw}? Esta acción no se puede deshacer.`)) return;
+    setBorrando(r.id);
+    // .select() para distinguir "borró" de "RLS no dejó tocar nada".
+    const { data, error } = await createClient().from("reclamos").delete().eq("id", r.id).select("id");
+    setBorrando(null);
+    if (error || !data?.length) {
+      window.alert("No se pudo eliminar el reclamo" + (error ? ": " + error.message : "."));
+      return;
+    }
+    router.refresh();
+  }
+
   if (!reclamos.length) {
     return (
       <div className="lla-card text-center text-muted py-16">
@@ -29,6 +49,7 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
             <th className="px-6 py-4">Geo</th>
             <th className="px-6 py-4">Archivos</th>
             <th className="px-6 py-4">Contacto</th>
+            <th className="px-6 py-4">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-card-border">
@@ -85,6 +106,21 @@ export default function ReclamosTable({ reclamos }: { reclamos: Reclamo[] }) {
                 <div className="text-[10px] uppercase font-bold tracking-tight">
                   <div className="text-white">{r.nombre_contacto || "-"}</div>
                   <div className="text-muted">{r.telefono_contacto || "-"}</div>
+                </div>
+              </td>
+              <td className="px-6 py-5 whitespace-nowrap">
+                <div className="flex items-center gap-3 text-[10px] uppercase font-bold tracking-wider">
+                  <Link href={`/panel/${r.id}/editar`} className="text-primary hover:underline">
+                    Editar
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => eliminar(r)}
+                    disabled={borrando === r.id}
+                    className="text-red-400 hover:text-red-300 hover:underline disabled:opacity-50"
+                  >
+                    {borrando === r.id ? "Eliminando..." : "Eliminar"}
+                  </button>
                 </div>
               </td>
             </tr>

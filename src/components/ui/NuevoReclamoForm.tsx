@@ -3,29 +3,40 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { TipoReclamo, Urgencia } from "@/types";
+import type { Reclamo, TipoReclamo, Urgencia } from "@/types";
 
 interface Props {
   comunaId: number;
   userId: string;
   tipos: TipoReclamo[];
+  /** Si viene, el formulario edita ese reclamo en vez de crear uno nuevo. */
+  reclamo?: Reclamo;
 }
 
 const URGENCIAS: Urgencia[] = ["BAJA", "MEDIA", "ALTA"];
 
-export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
+export default function NuevoReclamoForm({ comunaId, userId, tipos: tiposProp, reclamo }: Props) {
   const router = useRouter();
+  const editando = !!reclamo;
+  // Un reclamo viejo puede tener un tipo que ya no está activo: se agrega para
+  // que el select no lo reemplace en silencio por otro al guardar.
+  const tipos =
+    reclamo && !tiposProp.some((t) => t.nombre === reclamo.tipo_reclamo)
+      ? [...tiposProp, { id: -1, nombre: reclamo.tipo_reclamo } as TipoReclamo]
+      : tiposProp;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "ok" | "fail">("idle");
+  const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "ok" | "fail">(
+    reclamo?.lat && reclamo?.lng ? "ok" : "idle"
+  );
 
   const [form, setForm] = useState({
-    tipo_reclamo: tipos[0]?.nombre ?? "",
-    urgencia: "MEDIA" as Urgencia,
-    descripcion: "",
-    nombre_contacto: "",
-    telefono_contacto: "",
-    direccion_raw: "",
+    tipo_reclamo: reclamo?.tipo_reclamo ?? tipos[0]?.nombre ?? "",
+    urgencia: (reclamo?.urgencia ?? "MEDIA") as Urgencia,
+    descripcion: reclamo?.descripcion ?? "",
+    nombre_contacto: reclamo?.nombre_contacto ?? "",
+    telefono_contacto: reclamo?.telefono_contacto ?? "",
+    direccion_raw: reclamo?.direccion_raw ?? "",
   });
 
   const [files, setFiles] = useState<File[]>([]);
@@ -64,7 +75,8 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
 
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const skipNextFetch = useRef(false);
+  // Al editar, la dirección ya viene cargada: no abrir el desplegable al montar.
+  const skipNextFetch = useRef(editando);
 
   // Debounced suggestions
   const [debouncedDireccion, setDebouncedDireccion] = useState(form.direccion_raw);
@@ -158,8 +170,14 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
     setLoading(true);
     setError("");
 
+    // Al editar sin tocar la dirección se conservan las coordenadas guardadas.
+    const direccionSinCambios =
+      !!reclamo && reclamo.lat != null && reclamo.lng != null &&
+      form.direccion_raw === reclamo.direccion_raw;
     // Volvemos a geocodificar al final para estar seguros de tener los datos limpios
-    const geo = await geocodeAddress(form.direccion_raw);
+    const geo = direccionSinCambios
+      ? { lat: reclamo!.lat as number, lng: reclamo!.lng as number, normalizada: reclamo!.direccion_normalizada ?? form.direccion_raw }
+      : await geocodeAddress(form.direccion_raw);
     if (!geo) {
       setError("No se pudo validar la dirección final. Por favor intente nuevamente seleccionando de la lista.");
       setLoading(false);
@@ -167,7 +185,38 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
     }
 
     const supabase = createClient();
-    const { data: reclamoData, error: insertError } = await supabase.from("reclamos").insert({
+
+    if (reclamo) {
+      // .select() para detectar el caso en que RLS no deja tocar ninguna fila:
+      // sin él, un update bloqueado vuelve sin error y parece que guardó.
+      const { data: actualizados, error: updateError } = await supabase
+        .from("reclamos")
+        .update({
+          tipo_reclamo: form.tipo_reclamo,
+          urgencia: form.urgencia,
+          descripcion: form.descripcion,
+          nombre_contacto: form.nombre_contacto,
+          telefono_contacto: form.telefono_contacto,
+          direccion_raw: form.direccion_raw,
+          direccion_normalizada: geo.normalizada,
+          lat: geo.lat,
+          lng: geo.lng,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", reclamo.id)
+        .select("id");
+
+      if (updateError || !actualizados?.length) {
+        setError("No se pudo guardar los cambios" + (updateError ? ": " + updateError.message : "."));
+        setLoading(false);
+        return;
+      }
+      router.push("/panel");
+      router.refresh();
+      return;
+    }
+
+    const { data: reclamoData, error: insertError} = await supabase.from("reclamos").insert({
       tipo_reclamo: form.tipo_reclamo,
       urgencia: form.urgencia,
       descripcion: form.descripcion,
@@ -339,6 +388,7 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
         </div>
       </div>
 
+      {!editando && (
       <div className="space-y-4 border-t border-card-border pt-8">
         <label className="block text-xs font-bold text-muted uppercase tracking-widest ml-1">Fotos del Reclamo (Máximo 5)</label>
         <div className="flex flex-wrap gap-4">
@@ -369,6 +419,7 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
           )}
         </div>
       </div>
+      )}
 
       {error && (
         <div className="bg-red-950/20 border border-red-900/50 p-4 rounded-lg">
@@ -385,7 +436,7 @@ export default function NuevoReclamoForm({ comunaId, userId, tipos }: Props) {
             : "lla-btn-primary shadow-primary/20"
             }`}
         >
-          {loading ? "Procesando..." : "Ingresar Reclamo"}
+          {loading ? "Procesando..." : editando ? "Guardar cambios" : "Ingresar Reclamo"}
         </button>
         <a
           href="/panel"
